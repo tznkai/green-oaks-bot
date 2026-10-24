@@ -37,7 +37,7 @@ class Outcome:
 
     @property
     def score(self) -> int:
-        """Haughtiness minus bother: positive for success, negative for failure."""
+        """+haughtiness or -bother (never both); advantage keeps max, disadvantage keeps min."""
         return self.haughtiness - self.bother
 
 

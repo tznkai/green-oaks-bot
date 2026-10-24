@@ -10,6 +10,12 @@ def all_pairs():
     return {(s, r) for s, r in product(Suit, Rank)}
 
 
+@pytest.mark.parametrize("code", ["", "A", "AHx", "10H", "8H", "AX", "ah"])
+def test_from_code_rejects_malformed_codes(code):
+    with pytest.raises(ValueError):
+        Card.from_code(code)
+
+
 # AC1.1
 def test_rank_has_exactly_ten_members_in_order():
     assert [r.value for r in Rank] == ["A", "2", "3", "4", "5", "6", "7", "J", "Q", "K"]

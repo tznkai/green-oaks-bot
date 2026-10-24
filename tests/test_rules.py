@@ -1,5 +1,3 @@
-from itertools import product
-
 import pytest
 
 from green_oaks_bot.deck import FULL_DECK, Card, Rank, Suit
@@ -81,6 +79,7 @@ def test_trump_face_is_success_haughtiness_two(rank):
     assert o.bother == 0
     assert o.keyword is None
     assert o.grumble is GrumbleOption.NONE
+    assert o.changes_trump is False
 
 
 # AC2.6
@@ -119,6 +118,14 @@ def test_trump_pip_is_success_haughtiness_two(rank):
     assert o.haughtiness == 2
     assert o.bother == 0
     assert o.grumble is GrumbleOption.NONE
+    assert o.changes_trump is False
+
+
+@pytest.mark.parametrize("trump_suit", list(Suit))
+def test_only_trump_ace_changes_trump_for_every_card(trump_suit):
+    for card in FULL_DECK:
+        o = resolve(card, trump_suit)
+        assert o.changes_trump == (card.suit is trump_suit and card.rank is Rank.ACE), card
 
 
 # AC2.8
