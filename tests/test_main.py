@@ -205,3 +205,66 @@ async def test_run_opens_the_session_with_the_bounded_http_timeout(monkeypatch, 
 
     assert opened == [entry.HTTP_TIMEOUT]  # what run() actually passed, not just the constant
     assert entry.HTTP_TIMEOUT.total == 30  # aiohttp's default is 300 s
+
+
+def _relabelled_rules(text: str) -> str:
+    """The packaged file with one label changed: a valid ruleset that is visibly not the packaged one."""
+    old = '[labels]\nsuccess = "Success"'
+    assert text.count(old) == 1
+    return text.replace(old, '[labels]\nsuccess = "Victory"')
+
+
+def test_main_hands_the_configured_rules_file_to_run(tmp_path: Path, monkeypatch):
+    # AC11.3 wiring: RULES_FILE is what startup loads and what run() receives; nothing falls back.
+    from green_oaks_bot import __main__ as entry
+
+    rules = tmp_path / "rules.toml"
+    rules.write_text(_relabelled_rules(DEFAULT_RULES_FILE.read_text("utf-8")), "utf-8")
+    received: list[tuple[Path, object]] = []
+
+    async def recording_run(config, images, ruleset):
+        received.append((config.rules_file, ruleset))
+
+    monkeypatch.setattr(entry, "run", recording_run)
+    monkeypatch.setenv("FLUXER_TOKEN", "x.y")
+    monkeypatch.setenv("FLUXER_API_URL", "http://127.0.0.1:9/api")
+    monkeypatch.setenv("RULES_FILE", str(rules))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+
+    assert entry.main() == 0
+    ((path, ruleset),) = received
+    assert path == rules
+    assert ruleset.labels.success == "Victory"
+
+
+async def test_run_gives_the_store_and_the_bot_the_same_ruleset(tmp_path: Path, monkeypatch):
+    from green_oaks_bot import __main__ as entry
+    from green_oaks_bot.config import DEFAULT_ASSETS_DIR, Config
+    from green_oaks_bot.render import CardImages
+    from tests.helpers import custom_ruleset
+
+    custom = custom_ruleset()
+    seen: dict[str, object] = {}
+
+    class Stop(Exception):
+        """Raised by the recording Bot so run() stops once it has built its parts."""
+
+    class RecordingBot:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+            raise Stop()
+
+    async def discovery(session, config):
+        return "http://unused.test/api", "ws://unused.test/gateway"
+
+    monkeypatch.setattr(entry, "Bot", RecordingBot)
+    monkeypatch.setattr(entry, "resolve_endpoints", discovery)
+    config = Config(token="x.y", instance_url=None, api_url="http://unused.test/api", gateway_url=None,
+                    gm_role_name="GM", prefix="!", data_dir=tmp_path, assets_dir=DEFAULT_ASSETS_DIR,
+                    log_level="INFO")
+
+    with pytest.raises(Stop):
+        await entry.run(config, CardImages(DEFAULT_ASSETS_DIR), custom)
+
+    assert seen["ruleset"] is custom
+    assert seen["store"].ruleset is custom
