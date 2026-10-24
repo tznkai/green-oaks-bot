@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: Roberto de Luca, Claudio Pustorino, Claudio Serena; MS Edizioni / Magic Store srl
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: CC-BY-NC-SA-4.0
+#
+# Green Oaks by Roberto de Luca, Claudio Pustorino and Claudio Serena. Published by MS Edizioni /
+# Magic Store srl - https://www.msedizioni.it, https://fumblegdr.it. English translation by Leonardo
+# Abate; English editing by Jessica Collins; final editing by Giacomo Gentile. Licensed under
+# CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/). Adapted: the card-resolution
+# results are restated as structured data, with interpretations of unclear wording by K. Chen.
+#
+# This file is the only place the ArterioscleroSys results are written down. The engine
+# (src/green_oaks_bot/*.py, AGPL-3.0-or-later) loads it at startup and knows nothing of these words.
+# Redistributing this file means keeping this notice and the non-commercial, share-alike terms above.
+#
+# Schema
+#   [labels]        success, failure: words for the two outcomes.
+#                   success_points, failure_points: the terms printed before a value.
+#   [grumble]       upgrade_points: the value a non-trump face card gets when grumbled into Success.
+#   [trump.<cat>]   and [non_trump.<cat>] for cat in ace, two, face, pip: one cell per card category.
+#     success         bool. True for a Success result, False for a Failure.
+#     points          int >= 0. The success or failure value.
+#     keyword         optional string shown after the outcome word.
+#     grumble         "none", "redraw" (flip a replacement) or "upgrade" (make it Success).
+#                     Only a failure may have a grumble.
+#     changes_trump   bool. The player must choose a new trump.
+#     special         bool. Shown with the special embed colour.
+
+[labels]
+success = "Success"
+failure = "Failure"
+success_points = "Haughtiness"
+failure_points = "Bother"
+
+[grumble]
+upgrade_points = 3
+
+[trump.ace]
+success = true
+points = 5
+keyword = "Rumor!"
+grumble = "none"
+changes_trump = true
+special = true
+
+[trump.two]
+success = true
+points = 4
+keyword = "Wise Words"
+grumble = "none"
+changes_trump = false
+special = false
+
+[trump.face]
+success = true
+points = 2
+grumble = "none"
+changes_trump = false
+special = false
+
+[trump.pip]
+success = true
+points = 2
+grumble = "none"
+changes_trump = false
+special = false
+
+[non_trump.ace]
+success = false
+points = 4
+keyword = "Obituary!"
+grumble = "none"
+changes_trump = false
+special = false
+
+[non_trump.two]
+success = false
+points = 3
+keyword = "Rant!"
+grumble = "none"
+changes_trump = false
+special = false
+
+[non_trump.face]
+success = false
+points = 2
+grumble = "upgrade"
+changes_trump = false
+special = false
+
+[non_trump.pip]
+success = false
+points = 1
+grumble = "redraw"
+changes_trump = false
+special = false
