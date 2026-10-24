@@ -117,7 +117,7 @@ lines = [
     "`{p}trump`: show trump. {trump_cmd}: set trump (GM, or the player who flipped the trump Ace)",
     "`{p}shuffle`: GM only. Shuffle all 40 cards and turn up a new trump",
 ]
-credit = "Rules: Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0. See the README, Licensing."
+credit = "Rules adapted from Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0 https://creativecommons.org/licenses/by-nc-sa/4.0/. See the README, Licensing."
 
 [hints]
 # After a result that changes trump. {name}, {suits}.

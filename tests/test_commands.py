@@ -62,11 +62,12 @@ def test_help_lists_every_command():
 
 
 def test_help_ends_with_rules_attribution_line():
-    # Licensing: the rules file is CC BY-NC-SA 4.0 and credits its publisher; the help footer links to it.
+    # CC BY-NC-SA 4.0 s.3(a)(1): the credit names the publisher, the licence with its URI, and that
+    # the material is adapted. The credit is the rules file's, so it names no game terms here.
     lines = execute(parse("!help", "!"), make_table(["5S"]), ALICE).text.splitlines()
-    assert lines[-1].startswith("Rules:")
+    assert lines[-1].startswith("Rules adapted from Green Oaks")
     assert "MS Edizioni" in lines[-1]
-    assert "CC BY-NC-SA 4.0" in lines[-1]
+    assert "CC BY-NC-SA 4.0 https://creativecommons.org/licenses/by-nc-sa/4.0/." in lines[-1]
 
 
 # AC7.6: configurable prefix

@@ -36,7 +36,8 @@ def test_help_text_is_unchanged():
         "`!style emoji|short|long`: how card names are written",
         "`!images large|small|off`: card image size",
         "`!help`: this list",
-        "Rules: Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0. See the README, Licensing.",
+        "Rules adapted from Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0 "
+        "https://creativecommons.org/licenses/by-nc-sa/4.0/. See the README, Licensing.",
     ])
 
 
