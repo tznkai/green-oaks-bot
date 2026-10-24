@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import string
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -32,6 +32,9 @@ _CELL_KEYS = frozenset({"success", "points", "keyword", "redraw", "changes_trump
 _HELP_KEYS = frozenset({"title", "lines", "credit"})
 # Fields every text may use; see Ruleset.text.
 _COMMON_FIELDS = frozenset({"p", "redraw_cmd", "trump_cmd", "upgrade_points", *_LABEL_KEYS})
+# The fields the engine passes as ints. Every other field is a string. This is the one place that
+# says so: _template's sample render and its nested-field check both read it.
+_INT_FIELDS = frozenset({"upgrade_points"})
 # Each hint and the extra fields the engine passes it.
 HINT_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType({
     "choose_trump": frozenset({"name", "suits"}),
@@ -146,31 +149,52 @@ def _bool(d: Mapping[str, Any], key: str, where: str, source: str) -> bool:
     return value
 
 
+def _fields(template: str, nested: bool = False) -> Iterator[tuple[str, bool]]:
+    """Each (field name, is nested in a format spec) in `template`, recursing into format specs.
+
+    Raises ValueError for a malformed template, as string.Formatter.parse does.
+    """
+    for _, name, spec, _ in string.Formatter().parse(template):
+        if name is None:
+            continue
+        yield name, nested
+        if spec:
+            yield from _fields(spec, nested=True)
+
+
 def _template(d: Mapping[str, Any], key: str, where: str, source: str,
               allowed: frozenset[str] = frozenset()) -> str:
     """A non-empty format string that renders with the common fields and `allowed`, and nothing else.
 
-    The field names are checked first, then the template is rendered once with sample values of the
-    types the engine passes (strings, and an int for upgrade_points). That catches what the name check
-    cannot see: fields nested in a format spec, unknown conversions, and format specs that do not
-    suit the value. Without it those templates load and then fail in the middle of a game.
+    Checked, in order:
+    - it parses, and no field is positional (`{}`);
+    - every field name, including fields nested in a format spec, is a common field or in `allowed`;
+    - a field nested in a format spec is an int field (_INT_FIELDS), so `{name:>{upgrade_points}}`
+      is accepted and `{upgrade_points:{name}}` is refused: a string used as a width, precision or
+      type would pass a trial render and fail mid-game;
+    - the template renders once with a sample of each field's type (an int for _INT_FIELDS, "x" for
+      every other field). That catches unknown conversions and format specs that do not suit a
+      string, such as `{name:d}`. The sample is a type check, not a value check: it does not
+      exercise every value a field can take.
     """
     value = _text(d, key, where, source)
     try:
-        names = [name for _, name, _, _ in string.Formatter().parse(value) if name is not None]
+        fields = list(_fields(value))
     except ValueError as exc:
         raise _fail(source, f"[{where}] {key} is not a valid template: {exc}") from None
+    names = [name for name, _ in fields]
     if "" in names:
         raise _fail(source, f"[{where}] {key} uses positional field `{{}}`; name the field instead")
     unknown = sorted(set(names) - _COMMON_FIELDS - allowed)
     if unknown:
         raise _fail(source, f"[{where}] {key} uses unknown field(s): {', '.join(unknown)}")
-    sample: dict[str, object] = {name: "x" for name in _COMMON_FIELDS | allowed}
-    sample["upgrade_points"] = 0
+    for name, nested in fields:
+        if nested and name not in _INT_FIELDS:
+            raise _fail(source, f"[{where}] {key} nests string field `{name}` inside a format spec; "
+                                "only numeric fields may be nested")
+    sample: dict[str, object] = {name: 0 if name in _INT_FIELDS else "x" for name in _COMMON_FIELDS | allowed}
     try:
-        value.format_map(sample)
-    except KeyError as exc:
-        raise _fail(source, f"[{where}] {key} uses a field that is not allowed here: {exc.args[0]}") from None
+        value.format_map(sample)  # every name is in the sample: the unknown-field check above ran first
     except (ValueError, IndexError, AttributeError, TypeError) as exc:
         raise _fail(source, f"[{where}] {key} does not render: {exc}") from None
     return value

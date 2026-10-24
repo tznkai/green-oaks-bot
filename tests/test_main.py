@@ -215,7 +215,7 @@ def _relabelled_rules(text: str) -> str:
 
 
 def test_main_hands_the_configured_rules_file_to_run(tmp_path: Path, monkeypatch):
-    # AC11.3 wiring: RULES_FILE is what startup loads and what run() receives; nothing falls back.
+    # AC13.3 wiring: RULES_FILE is what startup loads and what run() receives; nothing falls back.
     from green_oaks_bot import __main__ as entry
 
     rules = tmp_path / "rules.toml"

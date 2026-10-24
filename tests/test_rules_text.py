@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 K. Chen
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """AC12.6: the help text, result prompts and redraw narration read exactly as they did before
-they moved into the rules file. Rules words are taken from the loaded ruleset (AC11.1)."""
+they moved into the rules file. Rules words are taken from the loaded ruleset (AC13.1)."""
 
 from __future__ import annotations
 

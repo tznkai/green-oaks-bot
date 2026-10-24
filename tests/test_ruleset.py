@@ -206,10 +206,13 @@ def test_a_misspelt_or_dotted_field_is_refused(template):
 
 
 @pytest.mark.parametrize("template, message", [
-    ("{p:{x}}", r"uses a field that is not allowed here: x"),
+    ("{p:{x}}", r"uses unknown field\(s\): x"),
     ("{name:d}", r"does not render: Unknown format code 'd'"),
     ("{name!z}", r"does not render: .*conversion"),
     ("{}", r"uses positional field `\{\}`; name the field instead"),
+    ("{upgrade_points:{name}}", r"nests string field `name` inside a format spec"),
+    ("{name:{p}}", r"nests string field `p` inside a format spec"),
+    ("{name:{upgrade_points:{p}}}", r"nests string field `p` inside a format spec"),
 ])
 def test_a_template_that_would_fail_when_rendered_is_refused_at_load(template, message):
     data = broken(lambda d: d["hints"].__setitem__("may_replace", template))

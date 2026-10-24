@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 K. Chen
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""AC11.1: no Python file under src/, tests/ or tools/ names a rules expression.
+"""AC13.1: no Python file under src/, tests/ or tools/ names a rules expression.
 
 The expressions are read from the rules data file (its keywords and its two points terms), so
 this file never spells them out. A term matches case-insensitively, as a whole word or as a
