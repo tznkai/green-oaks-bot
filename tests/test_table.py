@@ -33,7 +33,7 @@ def test_flip_with_empty_draw_is_refused_with_hint_and_state_unchanged():
     assert reply.tone == "error"
     assert HINT in reply.hints
     assert snapshot(t) == before
-    assert t.pending == Pending(ALICE.user_id, "grumble_redraw")
+    assert t.pending == Pending(ALICE.user_id, "redraw_replace")
 
 
 # AC1.5
@@ -96,7 +96,7 @@ def test_four_aces_drawn_puts_hint_on_every_reply():
     assert HINT in t.show_trump(ALICE).hints
     assert HINT in t.set_style(ALICE, "short").hints
     assert HINT in t.set_images(ALICE, "small").hints
-    refused = t.grumble(ALICE)
+    refused = t.redraw(ALICE)
     assert refused.tone == "error"
     assert HINT in refused.hints
 
@@ -166,7 +166,7 @@ def test_disadvantage_keeping_trump_ace_is_ignored_grumble_is_pending():
     t = make_table(["AH", "5S"], trump="H")
     t.disadvantage(ALICE)
     assert t.last_outcome.card == card("5S")
-    assert t.pending == Pending(ALICE.user_id, "grumble_redraw")
+    assert t.pending == Pending(ALICE.user_id, "redraw_replace")
     assert t.pending.kind != "choose_trump"
 
 
@@ -198,7 +198,7 @@ def test_two_flip_with_fewer_than_two_cards_is_refused_with_hint(action):
 def test_grumble_redraws_and_outcome_replaces_old_one():
     t = make_table(["5S", "KH"], trump="H")
     t.flip(ALICE)
-    reply = t.grumble(ALICE)
+    reply = t.redraw(ALICE)
     assert t.last_outcome.card == card("KH")
     assert t.last_outcome.success
     assert reply.cards == (card("KH"),)
@@ -209,10 +209,10 @@ def test_grumble_redraws_and_outcome_replaces_old_one():
 def test_grumble_redraw_can_be_grumbled_again_to_upgrade():
     t = make_table(["5S", "6C", "QD"], trump="H")
     t.flip(ALICE)
-    t.grumble(ALICE)
-    assert t.pending == Pending(ALICE.user_id, "grumble_redraw")
-    t.grumble(ALICE)
-    assert t.pending == Pending(ALICE.user_id, "grumble_upgrade")
+    t.redraw(ALICE)
+    assert t.pending == Pending(ALICE.user_id, "redraw_replace")
+    t.redraw(ALICE)
+    assert t.pending == Pending(ALICE.user_id, "redraw_upgrade")
 
 
 # AC5.3
@@ -220,7 +220,7 @@ def test_grumble_on_face_card_upgrades_without_drawing():
     t = make_table(["KS", "5C"], trump="H")
     t.flip(ALICE)
     draw_before = len(t.deck.draw)
-    reply = t.grumble(ALICE)
+    reply = t.redraw(ALICE)
     assert reply.tone == "success"
     assert t.last_outcome.success
     assert t.last_outcome.success_points == 3
@@ -233,16 +233,16 @@ def test_grumble_by_other_player_is_refused_and_pending_remains():
     t = make_table(["5S", "5C"], trump="H")
     t.flip(ALICE)
     before = snapshot(t)
-    reply = t.grumble(BOB)
+    reply = t.redraw(BOB)
     assert reply.tone == "error"
     assert snapshot(t) == before
-    assert t.pending == Pending(ALICE.user_id, "grumble_redraw")
+    assert t.pending == Pending(ALICE.user_id, "redraw_replace")
 
 
 # AC5.5
 def test_grumble_with_nothing_pending_is_refused():
     t = make_table(["6C", "5S"], trump="H")
-    reply = t.grumble(ALICE)
+    reply = t.redraw(ALICE)
     assert reply.tone == "error"
     assert t.pending is None
 
@@ -251,21 +251,21 @@ def test_grumble_after_trump_result_is_refused():
     t = make_table(["KH", "5S"], trump="H")
     t.flip(ALICE)
     assert t.pending is None
-    assert t.grumble(ALICE).tone == "error"
+    assert t.redraw(ALICE).tone == "error"
 
 
 def test_grumble_after_non_trump_ace_is_refused():
     t = make_table(["AC", "5S"], trump="H")
     t.flip(ALICE)
     assert t.pending is None
-    assert t.grumble(ALICE).tone == "error"
+    assert t.redraw(ALICE).tone == "error"
 
 
 def test_grumble_after_non_trump_two_is_refused():
     t = make_table(["2C", "5S"], trump="H")
     t.flip(ALICE)
     assert t.pending is None
-    assert t.grumble(ALICE).tone == "error"
+    assert t.redraw(ALICE).tone == "error"
 
 
 # AC5.6
@@ -274,7 +274,7 @@ def test_next_flip_by_anyone_clears_pending_grumble():
     t.flip(ALICE)
     t.flip(BOB)  # a non-trump two: no grumble
     assert t.pending is None
-    assert t.grumble(ALICE).tone == "error"
+    assert t.redraw(ALICE).tone == "error"
 
 
 def test_next_flip_sets_pending_only_for_its_own_card():
@@ -282,17 +282,17 @@ def test_next_flip_sets_pending_only_for_its_own_card():
     t.flip(ALICE)
     t.flip(BOB)
     t.flip(BOB)
-    assert t.pending == Pending(BOB.user_id, "grumble_redraw")
+    assert t.pending == Pending(BOB.user_id, "redraw_replace")
 
 
 # AC5.7
 def test_grumble_redraw_on_empty_draw_is_refused_with_hint_and_stays_pending():
     t = make_table(["5S"], trump="H")
     t.flip(ALICE)
-    reply = t.grumble(ALICE)
+    reply = t.redraw(ALICE)
     assert reply.tone == "error"
     assert HINT in reply.hints
-    assert t.pending == Pending(ALICE.user_id, "grumble_redraw")
+    assert t.pending == Pending(ALICE.user_id, "redraw_replace")
 
 
 # AC6.1

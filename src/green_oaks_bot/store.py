@@ -17,13 +17,15 @@ from typing import Any, TypeVar
 from green_oaks_bot.deck import Card, Deck, Suit
 from green_oaks_bot.ids import require_snowflake
 from green_oaks_bot.rules import Outcome
-from green_oaks_bot.ruleset import GrumbleOption, Ruleset, default_ruleset
+from green_oaks_bot.ruleset import RedrawOption, Ruleset, default_ruleset
 from green_oaks_bot.table import Pending, Table, new_table_notice
 
 log = logging.getLogger(__name__)
 
-FORMAT_VERSION = 2  # 2: outcome points fields renamed and `special` added; v1 files are set aside
-_PENDING_KINDS = ("grumble_redraw", "grumble_upgrade", "choose_trump")
+# 2: outcome points fields renamed and `special` added. 3: `grumble` renamed `redraw` (key, values and
+# pending kinds). Files of any other version are set aside.
+FORMAT_VERSION = 3
+_PENDING_KINDS = ("redraw_replace", "redraw_upgrade", "choose_trump")
 _STYLES = ("emoji", "short", "long")
 _IMAGE_MODES = ("large", "small", "off")
 _MAX_ACES = 4
@@ -36,7 +38,7 @@ def outcome_to_dict(o: Outcome) -> dict[str, Any]:
     return {
         "card": o.card.code, "trump": o.trump, "success": o.success,
         "success_points": o.success_points, "failure_points": o.failure_points, "keyword": o.keyword,
-        "grumble": o.grumble.value, "changes_trump": o.changes_trump, "special": o.special,
+        "redraw": o.redraw.value, "changes_trump": o.changes_trump, "special": o.special,
     }
 
 
@@ -66,7 +68,7 @@ def outcome_from_dict(d: Any) -> Outcome:
         success_points=_strict(d["success_points"], int, "success_points"),
         failure_points=_strict(d["failure_points"], int, "failure_points"),
         keyword=keyword,
-        grumble=GrumbleOption(d["grumble"]),
+        redraw=RedrawOption(d["redraw"]),
         changes_trump=_strict(d["changes_trump"], bool, "changes_trump"),
         special=_strict(d["special"], bool, "special"),
     )

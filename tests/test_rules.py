@@ -4,7 +4,7 @@ import pytest
 
 from green_oaks_bot.deck import FULL_DECK, Card, Rank, Suit
 from green_oaks_bot.rules import describe, resolve, upgrade
-from green_oaks_bot.ruleset import GrumbleOption, default_ruleset
+from green_oaks_bot.ruleset import RedrawOption, default_ruleset
 
 RULESET = default_ruleset()
 LABELS = RULESET.labels
@@ -35,7 +35,7 @@ def test_trump_ace_is_success_with_keyword_and_trump_change():
     assert o.failure_points == 0
     assert o.changes_trump is True
     assert o.special is True
-    assert o.grumble is GrumbleOption.NONE
+    assert o.redraw is RedrawOption.NONE
     assert o.trump is True
 
 
@@ -46,7 +46,7 @@ def test_non_trump_ace_is_failure_with_keyword():
     assert o.keyword == RULESET.cell(False, "ace").keyword
     assert o.failure_points == 4
     assert o.success_points == 0
-    assert o.grumble is GrumbleOption.NONE
+    assert o.redraw is RedrawOption.NONE
     assert o.changes_trump is False
     assert o.special is False
     assert o.trump is False
@@ -69,7 +69,7 @@ def test_non_trump_two_is_failure_with_keyword():
     assert o.success is False
     assert o.keyword == RULESET.cell(False, "two").keyword
     assert o.failure_points == 3
-    assert o.grumble is GrumbleOption.NONE
+    assert o.redraw is RedrawOption.NONE
     assert o.changes_trump is False
 
 
@@ -81,19 +81,19 @@ def test_trump_face_is_success_worth_two(rank):
     assert o.success_points == 2
     assert o.failure_points == 0
     assert o.keyword is None
-    assert o.grumble is GrumbleOption.NONE
+    assert o.redraw is RedrawOption.NONE
     assert o.changes_trump is False
 
 
 # AC2.6
 @pytest.mark.parametrize("rank", FACES)
-def test_non_trump_face_is_failure_worth_two_with_upgrade_grumble(rank):
+def test_non_trump_face_is_failure_worth_two_with_upgrade_redraw(rank):
     o = res(non_trump(rank))
     assert o.success is False
     assert o.failure_points == 2
     assert o.success_points == 0
     assert o.keyword is None
-    assert o.grumble is GrumbleOption.UPGRADE
+    assert o.redraw is RedrawOption.UPGRADE
 
 
 @pytest.mark.parametrize("rank", FACES)
@@ -104,12 +104,12 @@ def test_upgrade_turns_non_trump_face_into_success_worth_the_upgrade_points(rank
     assert after.success_points == RULESET.upgrade_points == 3
     assert after.failure_points == 0
     assert after.card == before.card
-    assert after.grumble is GrumbleOption.NONE
+    assert after.redraw is RedrawOption.NONE
     assert after.changes_trump is False
     assert after.special is False
 
 
-def test_upgrade_rejects_outcome_without_upgrade_grumble():
+def test_upgrade_rejects_outcome_without_upgrade_redraw():
     with pytest.raises(ValueError):
         upgrade(res(trump(Rank.FIVE)), RULESET)
 
@@ -121,7 +121,7 @@ def test_trump_pip_is_success_worth_two(rank):
     assert o.success is True
     assert o.success_points == 2
     assert o.failure_points == 0
-    assert o.grumble is GrumbleOption.NONE
+    assert o.redraw is RedrawOption.NONE
     assert o.changes_trump is False
 
 
@@ -134,12 +134,12 @@ def test_only_trump_ace_changes_trump_for_every_card(trump_suit):
 
 # AC2.8
 @pytest.mark.parametrize("rank", PIPS)
-def test_non_trump_pip_is_failure_worth_one_with_redraw_grumble(rank):
+def test_non_trump_pip_is_failure_worth_one_with_replace_redraw(rank):
     o = res(non_trump(rank))
     assert o.success is False
     assert o.failure_points == 1
     assert o.success_points == 0
-    assert o.grumble is GrumbleOption.REDRAW
+    assert o.redraw is RedrawOption.REPLACE
 
 
 # AC2.9

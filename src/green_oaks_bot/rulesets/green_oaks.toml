@@ -8,37 +8,51 @@
 # CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/). Adapted: the card-resolution
 # results are restated as structured data, with interpretations of unclear wording by K. Chen.
 #
-# This file is the only place the ArterioscleroSys results are written down. The engine
-# (src/green_oaks_bot/*.py, AGPL-3.0-or-later) loads it at startup and knows nothing of these words.
+# This file is the only place the ArterioscleroSys results are written down, together with the
+# player-facing text that restates them: the game half of the help text and the result hints. The
+# engine (src/green_oaks_bot/*.py, AGPL-3.0-or-later) loads it at startup and knows nothing of these words.
 # Redistributing this file means keeping this notice and the non-commercial, share-alike terms above.
 #
 # Schema
+#   Card categories (decided by the engine): ace = A, two = 2, face = J/Q/K, pip = 3-7.
 #   [labels]        success, failure: words for the two outcomes.
 #                   success_points, failure_points: the terms printed before a value.
-#   [grumble]       upgrade_points: the value a non-trump face card gets when grumbled into Success.
-#   [trump.<cat>]   and [non_trump.<cat>] for cat in ace, two, face, pip: one cell per card category.
+#                   redraw: the name players use for choosing to redraw.
+#   [redraw]        upgrade_points: the value a failure gets when a redraw upgrades it to Success.
+#   [trump.<cat>]   and [non_trump.<cat>] for each card category: one cell per category.
 #     success         bool. True for a Success result, False for a Failure.
 #     points          int >= 0. The success or failure value.
 #     keyword         optional string shown after the outcome word.
-#     grumble         "none", "redraw" (flip a replacement) or "upgrade" (make it Success).
-#                     Only a failure may have a grumble.
+#     redraw          "none", "replace" (flip a replacement card) or "upgrade" (make it Success).
+#                     Only a failure may offer a redraw.
 #     changes_trump   bool. The player must choose a new trump.
 #     special         bool. Shown with the special embed colour.
+#   [help]          title, lines (a list), credit: the !help text. The engine adds its own
+#                   rules-neutral commands (status, style, images, help) between lines and credit.
+#   [hints]         the lines that follow a result: prompts, redraw narration and redraw refusals.
+#
+#   Text fields are Python format strings. Every one may use:
+#     {p} the command prefix; {redraw_cmd} and {trump_cmd} the commands, formatted as code;
+#     {success} {failure} {success_points} {failure_points} {redraw} {upgrade_points}.
+#   Some hints also get {name} (the player), {card} (a card name), {result} (an outcome
+#   description) or {suits} (the suits a new trump may be chosen from); see each hint.
+#   Write {{ or }} for a literal brace. An unknown field fails at startup.
 
 [labels]
 success = "Success"
 failure = "Failure"
 success_points = "Haughtiness"
 failure_points = "Bother"
+redraw = "Grumble"
 
-[grumble]
+[redraw]
 upgrade_points = 3
 
 [trump.ace]
 success = true
 points = 5
 keyword = "Rumor!"
-grumble = "none"
+redraw = "none"
 changes_trump = true
 special = true
 
@@ -46,21 +60,21 @@ special = true
 success = true
 points = 4
 keyword = "Wise Words"
-grumble = "none"
+redraw = "none"
 changes_trump = false
 special = false
 
 [trump.face]
 success = true
 points = 2
-grumble = "none"
+redraw = "none"
 changes_trump = false
 special = false
 
 [trump.pip]
 success = true
 points = 2
-grumble = "none"
+redraw = "none"
 changes_trump = false
 special = false
 
@@ -68,7 +82,7 @@ special = false
 success = false
 points = 4
 keyword = "Obituary!"
-grumble = "none"
+redraw = "none"
 changes_trump = false
 special = false
 
@@ -76,20 +90,49 @@ special = false
 success = false
 points = 3
 keyword = "Rant!"
-grumble = "none"
+redraw = "none"
 changes_trump = false
 special = false
 
 [non_trump.face]
 success = false
 points = 2
-grumble = "upgrade"
+redraw = "upgrade"
 changes_trump = false
 special = false
 
 [non_trump.pip]
 success = false
 points = 1
-grumble = "redraw"
+redraw = "replace"
 changes_trump = false
 special = false
+
+[help]
+title = "**Green Oaks Bot commands**"
+lines = [
+    "`{p}flip` (`{p}f`): flip a card and resolve it against trump",
+    "`{p}adv` / `{p}dis`: flip two, keep the better / worse result",
+    "{redraw_cmd}: after a non-trump 3–7 flip a replacement; after a non-trump face card make it {success}, {success_points} {upgrade_points}",
+    "`{p}trump`: show trump. {trump_cmd}: set trump (GM, or the player who flipped the trump Ace)",
+    "`{p}shuffle`: GM only. Shuffle all 40 cards and turn up a new trump",
+]
+credit = "Rules: Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0. See the README, Licensing."
+
+[hints]
+# After a result that changes trump. {name}, {suits}.
+choose_trump = "{name}, choose a new trump with {trump_cmd}: {suits}."
+# The same, when no other suit is in the discards yet. {name}.
+choose_trump_unavailable = "{name}, no other suit has been drawn yet; the GM makes the call with {trump_cmd}."
+# After a failure that offers a "replace" redraw. {name}.
+may_replace = "{name} may {redraw_cmd} to flip a replacement card."
+# After a failure that offers an "upgrade" redraw. {name}.
+may_upgrade = "{name} may {redraw_cmd} to make it {success}, {success_points} {upgrade_points}."
+# A "replace" redraw: the new card and its result. {name}, {card}, {result}.
+replaced = "{name} grumbles and flips **{card}**: {result}."
+# An "upgrade" redraw. {name}, {card}, {result}.
+upgraded = "{name} grumbles: **{card}** becomes {result}."
+# Refusals.
+nothing_to_redraw = "There is nothing to grumble about."
+not_your_redraw = "Only the player who flipped that card can grumble."
+redraw_empty_draw = "The draw pile is empty, so there is nothing to redraw."

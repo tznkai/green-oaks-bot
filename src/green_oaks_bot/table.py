@@ -15,11 +15,11 @@ from green_oaks_bot.rules import (
     resolve,
     upgrade,
 )
-from green_oaks_bot.ruleset import GrumbleOption, Ruleset, default_ruleset
+from green_oaks_bot.ruleset import RedrawOption, Ruleset, default_ruleset
 
 Tone = Literal["success", "failure", "special", "info", "error"]
 ImageMode = Literal["large", "small", "off"]
-PendingKind = Literal["grumble_redraw", "grumble_upgrade", "choose_trump"]
+PendingKind = Literal["redraw_replace", "redraw_upgrade", "choose_trump"]
 
 STYLES: tuple[TextStyle, ...] = ("emoji", "short", "long")
 IMAGE_MODES: tuple[ImageMode, ...] = ("large", "small", "off")
@@ -123,26 +123,26 @@ class Table:
             return "special"
         return "success" if outcome.success else "failure"
 
+    def _hint(self, key: str, **fields: object) -> str:
+        return self.ruleset.hint(key, self.prefix, **fields)
+
     def _apply(self, actor: Actor, outcome: Outcome) -> list[str]:
         """Record a kept outcome; set pending; return prompt lines."""
         self.last_outcome = outcome
         self.pending = None
-        p = self.prefix
+        name = actor.display_name
         if outcome.changes_trump:
             self.pending = Pending(actor.user_id, "choose_trump")
             suits = ", ".join(_suit_label(s) for s in self.valid_trump_choices())
             if not suits:
-                return [(f"{actor.display_name}, no other suit has been drawn yet; "
-                         f"the GM makes the call with `{p}trump <suit>`.")]
-            return [f"{actor.display_name}, choose a new trump with `{p}trump <suit>`: {suits}."]
-        if outcome.grumble is GrumbleOption.REDRAW:
-            self.pending = Pending(actor.user_id, "grumble_redraw")
-            return [f"{actor.display_name} may `{p}grumble` to flip a replacement card."]
-        if outcome.grumble is GrumbleOption.UPGRADE:
-            self.pending = Pending(actor.user_id, "grumble_upgrade")
-            labels, points = self.ruleset.labels, self.ruleset.upgrade_points
-            return [(f"{actor.display_name} may `{p}grumble` to make it {labels.success}, "
-                     f"{labels.success_points} {points}.")]
+                return [self._hint("choose_trump_unavailable", name=name)]
+            return [self._hint("choose_trump", name=name, suits=suits)]
+        if outcome.redraw is RedrawOption.REPLACE:
+            self.pending = Pending(actor.user_id, "redraw_replace")
+            return [self._hint("may_replace", name=name)]
+        if outcome.redraw is RedrawOption.UPGRADE:
+            self.pending = Pending(actor.user_id, "redraw_upgrade")
+            return [self._hint("may_upgrade", name=name)]
         return []
 
     # ---- actions -------------------------------------------------------
@@ -183,27 +183,27 @@ class Table:
         ])
         return self.finish(Reply(text, (c1, c2), kept_index, self._tone(kept)))
 
-    def grumble(self, actor: Actor) -> Reply:
+    def redraw(self, actor: Actor) -> Reply:
         pending = self.pending
         if pending is None or pending.kind == "choose_trump":
-            return self._error("There is nothing to grumble about.")
+            return self._error(self._hint("nothing_to_redraw"))
         if pending.user_id != actor.user_id:
-            return self._error("Only the player who flipped that card can grumble.")
-        if pending.kind == "grumble_upgrade":
+            return self._error(self._hint("not_your_redraw"))
+        if pending.kind == "redraw_upgrade":
             assert self.last_outcome is not None
             outcome = upgrade(self.last_outcome, self.ruleset)
             self.last_outcome = outcome
             self.pending = None
-            text = (f"{actor.display_name} grumbles: **{self._name(outcome.card)}** "
-                    f"becomes {describe(outcome, self.ruleset)}.")
+            text = self._hint("upgraded", name=actor.display_name, card=self._name(outcome.card),
+                              result=describe(outcome, self.ruleset))
             return self.finish(Reply(text, (outcome.card,), None, "success"))
         if not self.deck.draw:
-            return self._error("The draw pile is empty, so there is nothing to redraw.")
+            return self._error(self._hint("redraw_empty_draw"))
         card = self._take()
         outcome = resolve(card, self.trump, self.ruleset)
         prompts = self._apply(actor, outcome)
-        flip_line = (f"{actor.display_name} grumbles and flips **{self._name(card)}**: "
-                     f"{describe(outcome, self.ruleset)}.")
+        flip_line = self._hint("replaced", name=actor.display_name, card=self._name(card),
+                               result=describe(outcome, self.ruleset))
         text = "\n".join([flip_line, *prompts])
         return self.finish(Reply(text, (card,), None, self._tone(outcome)))
 

@@ -7,14 +7,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from green_oaks_bot.deck import Suit
-from green_oaks_bot.ruleset import Ruleset, default_ruleset
+from green_oaks_bot.ruleset import REDRAW_COMMAND, Ruleset, default_ruleset
 from green_oaks_bot.table import IMAGE_MODES, STYLES, Actor, Reply, Table
 
 ALIASES = {
     "flip": "flip", "f": "flip",
     "adv": "adv", "advantage": "adv",
     "dis": "dis", "disadvantage": "dis",
-    "grumble": "grumble",
+    REDRAW_COMMAND: "grumble",
     "trump": "trump",
     "shuffle": "shuffle",
     "status": "status",
@@ -56,23 +56,18 @@ def parse_suit(token: str) -> Suit | None:
 
 
 def help_text(prefix: str, ruleset: Ruleset | None = None) -> str:
+    """The rules file's title and game lines, then the engine's own commands, then the rules credit."""
     p = prefix
     rules = ruleset if ruleset is not None else default_ruleset()
-    labels, upgrade_points = rules.labels, rules.upgrade_points
+    game = rules.help
     return "\n".join([
-        "**Green Oaks Bot commands**",
-        f"`{p}flip` (`{p}f`): flip a card and resolve it against trump",
-        f"`{p}adv` / `{p}dis`: flip two, keep the better / worse result",
-        (f"`{p}grumble`: after a non-trump 3–7 flip a replacement; after a non-trump face card make it "
-         f"{labels.success}, {labels.success_points} {upgrade_points}"),
-        f"`{p}trump`: show trump. `{p}trump <suit>`: set trump (GM, or the player who flipped the trump Ace)",
-        f"`{p}shuffle`: GM only. Shuffle all 40 cards and turn up a new trump",
+        rules.text(game.title, p),
+        *(rules.text(line, p) for line in game.lines),
         f"`{p}status`: trump, pile counts, Aces drawn",
         f"`{p}style emoji|short|long`: how card names are written",
         f"`{p}images large|small|off`: card image size",
         f"`{p}help`: this list",
-        # Rules-neutral credit line; the full attribution is in the README's Licensing section.
-        "Rules: Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0. See the README, Licensing.",
+        rules.text(game.credit, p),
     ])
 
 
@@ -133,7 +128,7 @@ def _dispatch(cmd: Command, table: Table, actor: Actor) -> Reply:
         case "dis":
             return table.disadvantage(actor)
         case "grumble":
-            return table.grumble(actor)
+            return table.redraw(actor)
         case "trump":
             if not cmd.args:
                 return table.show_trump(actor)

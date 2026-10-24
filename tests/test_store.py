@@ -44,7 +44,7 @@ def good_dict() -> dict:
 def test_save_and_load_round_trip_every_attribute():
     t = make_table(
         ["KC", "2H", "AS", "7D"], trump="S", discards=["7C", "AD"],
-        aces_drawn=2, pending=Pending("42", "grumble_upgrade"),
+        aces_drawn=2, pending=Pending("42", "redraw_upgrade"),
         last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()),
         style="emoji", images="small",
     )
@@ -57,7 +57,7 @@ def test_save_and_load_round_trip_every_attribute():
 def test_round_trip_through_file_and_new_store(tmp_path: Path):
     t = make_table(
         ["KC", "2H", "AS"], trump="S", discards=["7C"], aces_drawn=1,
-        pending=Pending("42", "grumble_redraw"),
+        pending=Pending("42", "redraw_replace"),
         last_outcome=resolve(Card(Suit.HEARTS, Rank.TWO), Suit.SPADES, default_ruleset()),
         style="short", images="off",
     )
@@ -515,7 +515,7 @@ def test_second_corruption_keeps_first_corrupt_copy(tmp_path: Path):
 
 def dict_with_outcome() -> dict:
     return table_to_dict(make_table(
-        ["KC", "2H"], trump="S", pending=Pending("42", "grumble_upgrade"),
+        ["KC", "2H"], trump="S", pending=Pending("42", "redraw_upgrade"),
         last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()),
     ))
 
@@ -541,7 +541,7 @@ BAD_FIELDS = [
     ("trump_not_a_string", _set("trump"), 5),
     ("draw_not_a_list", _set("draw"), "KC"),
     ("draw_entry_not_a_string", _set("draw"), [5, "2H"]),
-    ("pending_not_an_object", _set("pending"), "grumble_upgrade"),
+    ("pending_not_an_object", _set("pending"), "redraw_upgrade"),
     ("pending_user_id_int", _set("pending", "user_id"), 42),
     ("pending_kind_unknown", _set("pending", "kind"), "bogus"),
     ("outcome_trump_int", _set("last_outcome", "trump"), 1),
@@ -576,7 +576,7 @@ def test_loose_field_values_are_treated_as_corrupt(tmp_path: Path, apply, value)
 
 # AC9.4 (valid values still load: the stricter checks must not reject real state)
 def test_strict_validation_accepts_good_state(tmp_path: Path):
-    t = make_table(["KC", "2H"], trump="S", pending=Pending("42", "grumble_upgrade"),
+    t = make_table(["KC", "2H"], trump="S", pending=Pending("42", "redraw_upgrade"),
                    last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()), aces_drawn=4)
     rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!")
     assert state(rebuilt) == state(t)
@@ -761,7 +761,7 @@ async def test_cancel_during_non_creating_load_keeps_lock_until_thread_finishes(
 
 
 # FORMAT_VERSION 2: a v1 state file is set aside as corrupt, whether its body is v1-shaped or not
-@pytest.mark.parametrize("v1_shaped_body", [True, False], ids=["v1_field_names", "v2_body_stamped_v1"])
+@pytest.mark.parametrize("v1_shaped_body", [True, False], ids=["v1_field_names", "v3_body_stamped_v1"])
 def test_v1_state_file_is_set_aside_as_corrupt(tmp_path: Path, v1_shaped_body: bool):
     last = resolve(Card(Suit.HEARTS, Rank.TWO), Suit.SPADES, default_ruleset())
     old = table_to_dict(make_table(["KC"], trump="S", seed=3, last_outcome=last))
@@ -783,4 +783,24 @@ def test_v1_state_file_is_set_aside_as_corrupt(tmp_path: Path, v1_shaped_body: b
     assert loaded.last_outcome is None
     assert len(unique_codes(loaded)) == 40
     assert json.loads(path.with_name(path.name + ".corrupt").read_text("utf-8"))["version"] == 1
-    assert json.loads(path.read_text("utf-8"))["version"] == store_mod.FORMAT_VERSION == 2
+    assert json.loads(path.read_text("utf-8"))["version"] == store_mod.FORMAT_VERSION == 3
+
+
+# FORMAT_VERSION 3: a v2 state file (the `grumble` vocabulary) is set aside as corrupt
+def test_v2_state_file_is_set_aside_as_corrupt(tmp_path: Path):
+    last = resolve(Card(Suit.SPADES, Rank.FIVE), Suit.HEARTS, default_ruleset())
+    old = table_to_dict(make_table(["KC"], trump="H", seed=3, last_outcome=last,
+                                   pending=Pending("42", "redraw_replace")))
+    old["last_outcome"]["grumble"] = "redraw"
+    del old["last_outcome"]["redraw"]
+    old["pending"]["kind"] = "grumble_redraw"
+    old["version"] = 2
+    path = Store(tmp_path).path(GUILD, CHANNEL)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(old), "utf-8")
+
+    loaded, notice = Store(tmp_path).load(GUILD, CHANNEL)
+
+    assert notice is not None and notice.startswith(store_mod.UNREADABLE_RESET)
+    assert loaded.pending is None and loaded.last_outcome is None
+    assert json.loads(path.with_name(path.name + ".corrupt").read_text("utf-8"))["version"] == 2

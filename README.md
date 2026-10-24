@@ -18,7 +18,8 @@ This project is split into two licensed parts, so that the engine can be reused 
   **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). Full text: `LICENSES/AGPL-3.0-or-later.txt`.
 - **The rules data** (`src/green_oaks_bot/rulesets/green_oaks.toml`) is licensed under the
   **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** licence (`CC-BY-NC-SA-4.0`), because it
-  restates the results of *Green Oaks*. Full text: `LICENSES/CC-BY-NC-SA-4.0.txt`. Note that the publisher's notice
+  restates the results of *Green Oaks*. It also holds the game half of the `!help` text and the lines that follow a
+  result (prompts, and what a Grumble does), because those restate the results too. Full text: `LICENSES/CC-BY-NC-SA-4.0.txt`. Note that the publisher's notice
   says "4.0 IT": there is no ported 4.0 version of this licence, so the IT refers to the Italian-language legal code
   and this is the international 4.0 licence.
 - **The card images** (`assets/cards/`) are public domain, by Byron Knoll (see `LICENSES/LicenseRef-PublicDomain-vector-playing-cards.txt`

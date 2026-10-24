@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from green_oaks_bot.deck import Card, Rank, Suit
-from green_oaks_bot.ruleset import Category, GrumbleOption, Ruleset
+from green_oaks_bot.ruleset import Category, RedrawOption, Ruleset
 
 
 @dataclass(frozen=True)
@@ -22,7 +22,7 @@ class Outcome:
     success_points: int
     failure_points: int
     keyword: str | None
-    grumble: GrumbleOption
+    redraw: RedrawOption
     changes_trump: bool
     special: bool
 
@@ -52,17 +52,17 @@ def resolve(card: Card, trump: Suit, ruleset: Ruleset) -> Outcome:
         success_points=cell.points if cell.success else 0,
         failure_points=0 if cell.success else cell.points,
         keyword=cell.keyword,
-        grumble=cell.grumble,
+        redraw=cell.redraw,
         changes_trump=cell.changes_trump,
         special=cell.special,
     )
 
 
 def upgrade(outcome: Outcome, ruleset: Ruleset) -> Outcome:
-    if outcome.grumble is not GrumbleOption.UPGRADE:
-        raise ValueError("only a grumble-upgradable failure can be upgraded")
+    if outcome.redraw is not RedrawOption.UPGRADE:
+        raise ValueError("only a failure offering an upgrade redraw can be upgraded")
     return replace(outcome, success=True, success_points=ruleset.upgrade_points, failure_points=0,
-                   keyword=None, grumble=GrumbleOption.NONE, changes_trump=False, special=False)
+                   keyword=None, redraw=RedrawOption.NONE, changes_trump=False, special=False)
 
 
 def describe(outcome: Outcome, ruleset: Ruleset) -> str:

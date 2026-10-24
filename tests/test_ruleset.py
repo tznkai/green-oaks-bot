@@ -14,7 +14,8 @@ import pytest
 from green_oaks_bot.ruleset import (
     CATEGORIES,
     DEFAULT_RULES_FILE,
-    GrumbleOption,
+    HINT_FIELDS,
+    RedrawOption,
     RulesetError,
     default_ruleset,
     load_ruleset,
@@ -86,14 +87,14 @@ def test_a_missing_category_is_named_in_the_error(is_trump, cat):
         ruleset_from_dict(data, source="rules.toml")
 
 
-@pytest.mark.parametrize("section", ["labels", "grumble"])
+@pytest.mark.parametrize("section", ["labels", "redraw", "help", "hints"])
 def test_a_missing_section_is_refused(section):
     data = broken(lambda d: d.pop(section))
     with pytest.raises(RulesetError, match=section):
         ruleset_from_dict(data, source="rules.toml")
 
 
-@pytest.mark.parametrize("key", ["success", "failure", "success_points", "failure_points"])
+@pytest.mark.parametrize("key", ["success", "failure", "success_points", "failure_points", "redraw"])
 def test_a_missing_label_is_refused(key):
     data = broken(lambda d: d["labels"].pop(key))
     with pytest.raises(RulesetError, match=key):
@@ -108,20 +109,20 @@ def test_points_must_be_a_non_negative_int(value):
 
 
 def test_upgrade_points_must_be_an_int():
-    data = broken(lambda d: d["grumble"].__setitem__("upgrade_points", "3"))
+    data = broken(lambda d: d["redraw"].__setitem__("upgrade_points", "3"))
     with pytest.raises(RulesetError, match="upgrade_points"):
         ruleset_from_dict(data, source="rules.toml")
 
 
-def test_an_unknown_grumble_option_is_refused():
-    data = broken(lambda d: d["non_trump"]["pip"].__setitem__("grumble", "reroll"))
-    with pytest.raises(RulesetError, match="grumble"):
+def test_an_unknown_redraw_option_is_refused():
+    data = broken(lambda d: d["non_trump"]["pip"].__setitem__("redraw", "reroll"))
+    with pytest.raises(RulesetError, match="redraw"):
         ruleset_from_dict(data, source="rules.toml")
 
 
-def test_a_success_cell_may_not_have_a_grumble():
-    data = broken(lambda d: d["trump"]["pip"].__setitem__("grumble", "redraw"))
-    with pytest.raises(RulesetError, match=r"\[trump\.pip\] grumble"):
+def test_a_success_cell_may_not_offer_a_redraw():
+    data = broken(lambda d: d["trump"]["pip"].__setitem__("redraw", "replace"))
+    with pytest.raises(RulesetError, match=r"\[trump\.pip\] redraw"):
         ruleset_from_dict(data, source="rules.toml")
 
 
@@ -137,5 +138,76 @@ def test_an_empty_keyword_is_refused():
         ruleset_from_dict(data, source="rules.toml")
 
 
-def test_grumble_option_values_are_the_three_engine_options():
-    assert {g.value for g in GrumbleOption} == {"none", "redraw", "upgrade"}
+def test_redraw_option_values_are_the_three_engine_options():
+    assert {g.value for g in RedrawOption} == {"none", "replace", "upgrade"}
+
+
+def test_the_old_grumble_vocabulary_is_refused():
+    data = broken(lambda d: d.__setitem__("grumble", d.pop("redraw")))
+    with pytest.raises(RulesetError, match="grumble"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+# AC12.3 – AC12.5: help and hints come from the rules file and are checked at load
+
+def test_packaged_help_and_every_hint_are_present():
+    ruleset = default_ruleset()
+    assert ruleset.help.title and ruleset.help.lines and ruleset.help.credit
+    assert set(ruleset.hints) == set(HINT_FIELDS)
+
+
+@pytest.mark.parametrize("key", sorted(HINT_FIELDS))
+def test_a_missing_hint_is_refused(key):
+    data = broken(lambda d: d["hints"].pop(key))
+    with pytest.raises(RulesetError, match=rf"\[hints\] {key}"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_an_unknown_hint_is_refused():
+    data = broken(lambda d: d["hints"].__setitem__("may_reroll", "x"))
+    with pytest.raises(RulesetError, match="may_reroll"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_a_hint_may_not_use_a_field_the_engine_does_not_pass_it():
+    # `suits` is passed only to choose_trump.
+    data = broken(lambda d: d["hints"].__setitem__("may_replace", "{name} {suits}"))
+    with pytest.raises(RulesetError, match=r"\[hints\] may_replace uses unknown field\(s\): suits"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+@pytest.mark.parametrize("template", ["{nmae}", "{labels.success}", "{name[0]}"])
+def test_a_misspelt_or_dotted_field_is_refused(template):
+    data = broken(lambda d: d["hints"].__setitem__("replaced", template))
+    with pytest.raises(RulesetError, match="unknown field"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_an_unbalanced_brace_is_refused():
+    data = broken(lambda d: d["help"].__setitem__("title", "Commands {"))
+    with pytest.raises(RulesetError, match=r"\[help\] title is not a valid template"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_a_help_line_with_an_unknown_field_is_named_by_index():
+    data = broken(lambda d: d["help"]["lines"].__setitem__(1, "{prefix}flip"))
+    with pytest.raises(RulesetError, match=r"\[help\.lines\[1\]\].*prefix"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+@pytest.mark.parametrize("lines", [[], "one line", None])
+def test_help_lines_must_be_a_non_empty_list(lines):
+    data = broken(lambda d: d["help"].__setitem__("lines", lines))
+    with pytest.raises(RulesetError, match=r"\[help\] lines"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_escaped_braces_are_literal():
+    data = broken(lambda d: d["hints"].__setitem__("nothing_to_redraw", "{{none}} for {redraw}"))
+    ruleset = ruleset_from_dict(data, source="rules.toml")
+    assert ruleset.hint("nothing_to_redraw", "!") == f"{{none}} for {ruleset.labels.redraw}"
+
+
+def test_text_fills_the_common_fields():
+    ruleset = default_ruleset()
+    assert ruleset.text("{redraw_cmd} {trump_cmd} {p}", "?") == "`?grumble` `?trump <suit>` ?"
