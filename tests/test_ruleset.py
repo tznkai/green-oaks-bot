@@ -226,6 +226,22 @@ def test_a_nested_field_the_engine_passes_is_accepted():
     assert ruleset.hint("may_replace", "!", name="Ada") == f"{'Ada':>{ruleset.upgrade_points}}"
 
 
+def test_a_nested_int_whose_real_value_breaks_the_spec_is_refused_at_load():
+    # At upgrade_points = 10, `10>5` is not a valid format spec: the first digit is not a fill
+    # character because `0` is not an alignment. A sample of 0 would render `0>5` and pass.
+    data = broken(lambda d: d["redraw"].__setitem__("upgrade_points", 10))
+    data["hints"]["may_replace"] = "{name:{upgrade_points}>5}"
+    with pytest.raises(RulesetError, match=r"\[hints\] may_replace does not render"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_a_nested_int_as_width_is_accepted_at_its_real_value():
+    data = broken(lambda d: d["redraw"].__setitem__("upgrade_points", 10))
+    data["hints"]["may_replace"] = "{name:>{upgrade_points}}"
+    ruleset = ruleset_from_dict(data, source="rules.toml")
+    assert ruleset.hint("may_replace", "!", name="Ada") == f"{'Ada':>10}"
+
+
 def test_an_unbalanced_brace_is_refused():
     data = broken(lambda d: d["help"].__setitem__("title", "Commands {"))
     with pytest.raises(RulesetError, match=r"\[help\] title is not a valid template"):

@@ -163,8 +163,10 @@ def _fields(template: str, nested: bool = False) -> Iterator[tuple[str, bool]]:
 
 
 def _template(d: Mapping[str, Any], key: str, where: str, source: str,
-              allowed: frozenset[str] = frozenset()) -> str:
+              ints: Mapping[str, int], allowed: frozenset[str] = frozenset()) -> str:
     """A non-empty format string that renders with the common fields and `allowed`, and nothing else.
+
+    `ints` maps each int field (_INT_FIELDS) to its real value, as the engine will pass it.
 
     Checked, in order:
     - it parses, and no field is positional (`{}`);
@@ -172,10 +174,11 @@ def _template(d: Mapping[str, Any], key: str, where: str, source: str,
     - a field nested in a format spec is an int field (_INT_FIELDS), so `{name:>{upgrade_points}}`
       is accepted and `{upgrade_points:{name}}` is refused: a string used as a width, precision or
       type would pass a trial render and fail mid-game;
-    - the template renders once with a sample of each field's type (an int for _INT_FIELDS, "x" for
-      every other field). That catches unknown conversions and format specs that do not suit a
-      string, such as `{name:d}`. The sample is a type check, not a value check: it does not
-      exercise every value a field can take.
+    - the template renders once, with each int field at its real value from `ints` and every other
+      field as "x". A string's rendering depends only on its type, not its content, so with the
+      nested-field check above this trial render decides every format spec exactly: a template that
+      passes renders for every value the engine can pass. It catches unknown conversions, and specs
+      that do not suit their field, such as `{name:d}`, or `{name:{upgrade_points}>5}` at 10.
     """
     value = _text(d, key, where, source)
     try:
@@ -192,7 +195,8 @@ def _template(d: Mapping[str, Any], key: str, where: str, source: str,
         if nested and name not in _INT_FIELDS:
             raise _fail(source, f"[{where}] {key} nests string field `{name}` inside a format spec; "
                                 "only numeric fields may be nested")
-    sample: dict[str, object] = {name: 0 if name in _INT_FIELDS else "x" for name in _COMMON_FIELDS | allowed}
+    sample: dict[str, object] = {name: ints[name] if name in _INT_FIELDS else "x"
+                                 for name in _COMMON_FIELDS | allowed}
     try:
         value.format_map(sample)  # every name is in the sample: the unknown-field check above ran first
     except (ValueError, IndexError, AttributeError, TypeError) as exc:
@@ -244,6 +248,7 @@ def ruleset_from_dict(data: Mapping[str, Any], source: str = "rules file") -> Ru
     redraw_d = _section(data, "redraw", source)
     _no_extra_keys(redraw_d, frozenset({"upgrade_points"}), "redraw", source)
     upgrade_points = _int(redraw_d, "upgrade_points", "redraw", source)
+    ints = {"upgrade_points": upgrade_points}  # keyed by _INT_FIELDS: each int field's real value
 
     cells: dict[tuple[bool, Category], Cell] = {}
     for is_trump, section in ((True, "trump"), (False, "non_trump")):
@@ -259,15 +264,15 @@ def ruleset_from_dict(data: Mapping[str, Any], source: str = "rules file") -> Ru
     if not isinstance(lines, list) or not lines:
         raise _fail(source, "[help] lines must be a non-empty list of strings")
     help_ = Help(
-        title=_template(help_d, "title", "help", source),
-        lines=tuple(_template({"line": line}, "line", f"help.lines[{i}]", source)
+        title=_template(help_d, "title", "help", source, ints),
+        lines=tuple(_template({"line": line}, "line", f"help.lines[{i}]", source, ints)
                     for i, line in enumerate(lines)),
-        credit=_template(help_d, "credit", "help", source),
+        credit=_template(help_d, "credit", "help", source, ints),
     )
 
     hints_d = _section(data, "hints", source)
     _no_extra_keys(hints_d, frozenset(HINT_FIELDS), "hints", source)
-    hints = {key: _template(hints_d, key, "hints", source, allowed)
+    hints = {key: _template(hints_d, key, "hints", source, ints, allowed)
              for key, allowed in HINT_FIELDS.items()}
 
     return Ruleset(labels=labels, upgrade_points=upgrade_points, cells=MappingProxyType(cells),
