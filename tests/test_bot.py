@@ -24,8 +24,10 @@ from green_oaks_bot.config import DEFAULT_ASSETS_DIR
 from green_oaks_bot.fluxer.rest import FluxerREST
 from green_oaks_bot.fluxer.roles import GMResolver
 from green_oaks_bot.render import CardImages, embed_colour
+from green_oaks_bot.ruleset import Ruleset
 from green_oaks_bot.store import Store
 from tests.fakes import FakeFluxerState, Override, make_rest_app
+from tests.helpers import CUSTOM_TITLE, RULESET, custom_ruleset
 
 TOKEN = "test.token"
 GUILD = "100"
@@ -55,14 +57,15 @@ def images() -> CardImages:
     return CardImages(DEFAULT_ASSETS_DIR)
 
 
-def make_bot(session, api, tmp_path: Path, images: CardImages) -> Bot:
+def make_bot(session, api, tmp_path: Path, images: CardImages, ruleset: Ruleset = RULESET) -> Bot:
     rest = FluxerREST(session, api, TOKEN)
     return Bot(
         rest=rest,
-        store=Store(tmp_path / "data", prefix="!", rng=random.Random(3)),
+        store=Store(tmp_path / "data", prefix="!", rng=random.Random(3), ruleset=ruleset),
         images=images,
         gm=GMResolver(rest, "GM"),
         prefix="!",
+        ruleset=ruleset,
     )
 
 
@@ -547,6 +550,25 @@ async def test_help_in_new_channel_replies_without_touching_the_store(fake, sess
     assert "Green Oaks Bot commands" in description
     assert "New deck" not in description
     assert not state_file(tmp_path).exists()
+
+
+async def test_help_shows_the_custom_ruleset_the_bot_was_given(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images, ruleset=custom_ruleset())
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!help"))
+
+    (sent,) = messages(state)
+    description = sent.payload["embeds"][0]["description"]
+    assert description.splitlines()[0] == CUSTOM_TITLE
+    assert "Green Oaks Bot commands" not in description
+
+
+async def test_bot_refuses_a_store_built_from_a_different_ruleset(session, tmp_path, images):
+    rest = FluxerREST(session, "http://unused.test/api", TOKEN)
+    with pytest.raises(ValueError, match="same Ruleset"):
+        Bot(rest=rest, store=Store(tmp_path, prefix="!", ruleset=custom_ruleset()), images=images,
+            gm=GMResolver(rest, "GM"), prefix="!", ruleset=RULESET)
 
 
 async def test_unknown_command_in_new_channel_writes_nothing(fake, session, tmp_path, images):

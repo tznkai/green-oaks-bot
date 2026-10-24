@@ -20,6 +20,7 @@ from green_oaks_bot.fluxer.rest import FluxerHTTPError, FluxerREST, reply_to_emb
 from green_oaks_bot.fluxer.roles import GMResolver
 from green_oaks_bot.ids import is_snowflake
 from green_oaks_bot.render import CardImages
+from green_oaks_bot.ruleset import Ruleset
 from green_oaks_bot.store import Store
 from green_oaks_bot.table import Actor, ImageMode, Reply, Table
 
@@ -48,8 +49,12 @@ def _display_name(d: dict[str, Any]) -> str:
 
 class Bot:
     def __init__(self, *, rest: FluxerREST, store: Store, images: CardImages,
-                 gm: GMResolver, prefix: str) -> None:
+                 gm: GMResolver, prefix: str, ruleset: Ruleset) -> None:
+        if store.ruleset is not ruleset:
+            # The help text and the table's prompts must come from the same rules file.
+            raise ValueError("Bot and Store must be given the same Ruleset")
         self.rest = rest
+        self.ruleset = ruleset
         self.store = store
         self.images = images
         self.gm = gm
@@ -123,7 +128,7 @@ class Bot:
                 await self.rest.send_message(channel_id, reply_to_embed(Reply(DM_TEXT), False), None)
             return
         try:
-            standalone = standalone_reply(cmd, self.prefix, self.store.ruleset)
+            standalone = standalone_reply(cmd, self.prefix, self.ruleset)
             if standalone is not None:
                 # help and unknown commands never touch the store.
                 await self._send_reply(channel_id, standalone, None, reply_to)

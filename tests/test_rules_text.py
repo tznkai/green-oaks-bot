@@ -8,8 +8,7 @@ from __future__ import annotations
 from green_oaks_bot.commands import help_text
 from green_oaks_bot.deck import Card
 from green_oaks_bot.rules import describe, resolve
-from green_oaks_bot.ruleset import default_ruleset
-from tests.helpers import ALICE, BOB, make_table
+from tests.helpers import ALICE, BOB, default_ruleset, make_table
 
 RULESET = default_ruleset()
 L = RULESET.labels

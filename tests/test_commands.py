@@ -15,7 +15,7 @@ from green_oaks_bot.commands import (
 )
 from green_oaks_bot.deck import Card, Suit
 from green_oaks_bot.table import Table, new_table_notice
-from tests.helpers import ALICE, BOB, GM, make_table
+from tests.helpers import ALICE, BOB, GM, RULESET, make_table
 
 
 def card(code: str) -> Card:
@@ -217,7 +217,7 @@ def test_no_notice_leaves_text_unprefixed():
 
 
 def test_new_table_notice_comes_first_on_first_command_in_new_channel():
-    table = Table.new(random.Random(7))
+    table = Table.new(random.Random(7), ruleset=RULESET)
     notice = new_table_notice(table)
     reply = execute(parse("!status", "!"), table, ALICE, notice=new_table_notice(table))
     assert reply.text.startswith(notice + "\n")
@@ -238,19 +238,19 @@ def test_help_carries_no_hint_when_not_needed():
 
 # AC7.5: help and unknown commands are answered without any table
 def test_standalone_help_and_unknown_need_no_table():
-    help_reply = standalone_reply(parse("!help", "!"), "!")
+    help_reply = standalone_reply(parse("!help", "!"), "!", RULESET)
     assert help_reply is not None and "`!flip`" in help_reply.text
-    unknown = standalone_reply(parse("!dance", "!"), "!")
+    unknown = standalone_reply(parse("!dance", "!"), "!", RULESET)
     assert unknown is not None and unknown.tone == "error" and "`!help`" in unknown.text
 
 
 def test_standalone_reply_is_none_for_table_commands():
-    assert standalone_reply(parse("!flip", "!"), "!") is None
-    assert standalone_reply(parse("!status", "!"), "!") is None
+    assert standalone_reply(parse("!flip", "!"), "!", RULESET) is None
+    assert standalone_reply(parse("!status", "!"), "!", RULESET) is None
 
 
 def test_standalone_reply_uses_configured_prefix():
-    assert "`?help`" in standalone_reply(parse("?dance", "?"), "?").text
+    assert "`?help`" in standalone_reply(parse("?dance", "?"), "?", RULESET).text
 
 
 # AC1.7 / AC1.8: which commands are allowed to start a deck
@@ -290,7 +290,7 @@ def test_no_deck_notice_is_prepended_when_given():
 
 # AC1.8: a GM shuffle in a new channel is the creation shuffle: the deck is not shuffled again
 def test_gm_shuffle_on_new_deck_announces_without_a_second_shuffle():
-    table = Table.new(random.Random(11))
+    table = Table.new(random.Random(11), ruleset=RULESET)
     notice = new_table_notice(table)
     before = (table.deck.draw_codes(), table.deck.discard_codes(), table.trump)
 
@@ -304,7 +304,7 @@ def test_gm_shuffle_on_new_deck_announces_without_a_second_shuffle():
 
 # AC1.8: the store's creation notice never lets a non-GM shuffle through; it is refused as usual
 def test_non_gm_shuffle_with_notice_is_refused_not_reshuffled():
-    t = Table.new(random.Random(12))
+    t = Table.new(random.Random(12), ruleset=RULESET)
     notice = new_table_notice(t)
     before = (t.deck.draw_codes(), t.deck.discard_codes(), t.trump)
 

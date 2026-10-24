@@ -15,7 +15,6 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
@@ -232,7 +231,8 @@ def ruleset_from_dict(data: Mapping[str, Any], source: str = "rules file") -> Ru
                    help=help_, hints=MappingProxyType(hints))
 
 
-def load_ruleset(path: Path = DEFAULT_RULES_FILE) -> Ruleset:
+def load_ruleset(path: Path) -> Ruleset:
+    """Read and validate the rules file at `path`. The caller names the file; there is no implicit default."""
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
@@ -241,9 +241,3 @@ def load_ruleset(path: Path = DEFAULT_RULES_FILE) -> Ruleset:
     except tomllib.TOMLDecodeError as exc:
         raise RulesetError(f"rules file {path} is not valid TOML: {exc}") from exc
     return ruleset_from_dict(data, source=str(path))
-
-
-@lru_cache(maxsize=1)
-def default_ruleset() -> Ruleset:
-    """The packaged rules file, loaded once. Production passes the configured ruleset explicitly."""
-    return load_ruleset(DEFAULT_RULES_FILE)

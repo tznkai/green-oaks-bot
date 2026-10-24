@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from green_oaks_bot.deck import Suit
-from green_oaks_bot.ruleset import REDRAW_COMMAND, Ruleset, default_ruleset
+from green_oaks_bot.ruleset import REDRAW_COMMAND, Ruleset
 from green_oaks_bot.table import IMAGE_MODES, STYLES, Actor, Reply, Table
 
 ALIASES = {
@@ -55,10 +55,10 @@ def parse_suit(token: str) -> Suit | None:
     return _SUIT_WORDS.get(token.strip().replace("\ufe0f", "").lower())
 
 
-def help_text(prefix: str, ruleset: Ruleset | None = None) -> str:
+def help_text(prefix: str, ruleset: Ruleset) -> str:
     """The rules file's title and game lines, then the engine's own commands, then the rules credit."""
     p = prefix
-    rules = ruleset if ruleset is not None else default_ruleset()
+    rules = ruleset
     game = rules.help
     return "\n".join([
         rules.text(game.title, p),
@@ -84,7 +84,7 @@ def creates_deck(cmd: Command, is_gm: bool) -> bool:
     return cmd.name in _DECK_STARTERS or (cmd.name == "shuffle" and is_gm)
 
 
-def standalone_reply(cmd: Command, prefix: str, ruleset: Ruleset | None = None) -> Reply | None:
+def standalone_reply(cmd: Command, prefix: str, ruleset: Ruleset) -> Reply | None:
     """The reply for `help` and unknown commands, which need no table. None for table commands."""
     if cmd.name == "help":
         return Reply(help_text(prefix, ruleset))

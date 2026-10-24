@@ -17,7 +17,7 @@ from typing import Any, TypeVar
 from green_oaks_bot.deck import Card, Deck, Suit
 from green_oaks_bot.ids import require_snowflake
 from green_oaks_bot.rules import Outcome
-from green_oaks_bot.ruleset import RedrawOption, Ruleset, default_ruleset
+from green_oaks_bot.ruleset import RedrawOption, Ruleset
 from green_oaks_bot.table import Pending, Table, new_table_notice
 
 log = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ def table_to_dict(t: Table) -> dict[str, Any]:
     }
 
 
-def table_from_dict(d: Any, rng: random.Random, *, prefix: str, ruleset: Ruleset | None = None) -> Table:
+def table_from_dict(d: Any, rng: random.Random, *, prefix: str, ruleset: Ruleset) -> Table:
     if not isinstance(d, dict):
         raise TypeError("state is not a JSON object")
     version = d.get("version")
@@ -195,10 +195,10 @@ class _ThreadJob[R]:
 
 class Store:
     def __init__(self, root: Path, *, prefix: str = "!", rng: random.Random | None = None,
-                 ruleset: Ruleset | None = None) -> None:
+                 ruleset: Ruleset) -> None:
         self.root = root
         self.prefix = prefix
-        self.ruleset: Ruleset = ruleset if ruleset is not None else default_ruleset()
+        self.ruleset = ruleset
         self.rng = rng if rng is not None else random.Random()
         self._tables: dict[tuple[str, str], Table] = {}
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}

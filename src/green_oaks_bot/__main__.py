@@ -28,7 +28,7 @@ log = logging.getLogger("green_oaks_bot")
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 
-async def run(config: Config, images: CardImages, ruleset: Ruleset | None = None) -> None:
+async def run(config: Config, images: CardImages, ruleset: Ruleset) -> None:
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -39,7 +39,7 @@ async def run(config: Config, images: CardImages, ruleset: Ruleset | None = None
         rest = FluxerREST(session, api, config.token)
         store = Store(config.data_dir, prefix=config.prefix, ruleset=ruleset)
         bot = Bot(rest=rest, store=store, images=images,
-                  gm=GMResolver(rest, config.gm_role_name), prefix=config.prefix)
+                  gm=GMResolver(rest, config.gm_role_name), prefix=config.prefix, ruleset=ruleset)
         gateway = Gateway(session, gateway_url, config.token, bot.on_dispatch, on_ready=bot.on_ready)
         gw_task = asyncio.create_task(gateway.run())
         stop_task = asyncio.create_task(stop.wait())

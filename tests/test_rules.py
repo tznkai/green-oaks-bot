@@ -4,9 +4,9 @@ import pytest
 
 from green_oaks_bot.deck import FULL_DECK, Card, Rank, Suit
 from green_oaks_bot.rules import describe, resolve, upgrade
-from green_oaks_bot.ruleset import RedrawOption, default_ruleset
+from green_oaks_bot.ruleset import RedrawOption
+from tests.helpers import RULESET
 
-RULESET = default_ruleset()
 LABELS = RULESET.labels
 TRUMP = Suit.HEARTS
 OTHER = Suit.SPADES

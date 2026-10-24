@@ -18,10 +18,9 @@ import pytest
 from green_oaks_bot import store as store_mod
 from green_oaks_bot.deck import Card, Rank, Suit
 from green_oaks_bot.rules import resolve
-from green_oaks_bot.ruleset import default_ruleset
 from green_oaks_bot.store import Store, table_from_dict, table_to_dict
 from green_oaks_bot.table import Pending, Table, new_table_notice
-from tests.helpers import ALICE, make_table
+from tests.helpers import ALICE, RULESET, default_ruleset, make_table
 
 GUILD = "111"
 CHANNEL = "222"
@@ -37,7 +36,7 @@ def unique_codes(t: Table) -> set[str]:
 
 
 def good_dict() -> dict:
-    return table_to_dict(Table.new(random.Random(1)))
+    return table_to_dict(Table.new(random.Random(1), ruleset=RULESET))
 
 
 # AC9.1
@@ -48,7 +47,7 @@ def test_save_and_load_round_trip_every_attribute():
         last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()),
         style="emoji", images="small",
     )
-    rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!")
+    rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!", ruleset=RULESET)
     assert state(rebuilt) == state(t)
     assert rebuilt.deck.draw[:4] == [Card.from_code(c) for c in ["KC", "2H", "AS", "7D"]]
 
@@ -61,8 +60,8 @@ def test_round_trip_through_file_and_new_store(tmp_path: Path):
         last_outcome=resolve(Card(Suit.HEARTS, Rank.TWO), Suit.SPADES, default_ruleset()),
         style="short", images="off",
     )
-    Store(tmp_path).save(GUILD, CHANNEL, t)
-    loaded, notice = Store(tmp_path).load(GUILD, CHANNEL)
+    Store(tmp_path, ruleset=RULESET).save(GUILD, CHANNEL, t)
+    loaded, notice = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert notice is None
     assert state(loaded) == state(t)
 
@@ -71,8 +70,8 @@ def test_round_trip_through_file_and_new_store(tmp_path: Path):
 def test_round_trip_with_pending_and_last_outcome_none(tmp_path: Path):
     t = make_table(["5S"], trump="H")
     assert t.pending is None and t.last_outcome is None
-    Store(tmp_path).save(GUILD, CHANNEL, t)
-    loaded, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    Store(tmp_path, ruleset=RULESET).save(GUILD, CHANNEL, t)
+    loaded, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert loaded.pending is None
     assert loaded.last_outcome is None
     assert state(loaded) == state(t)
@@ -80,20 +79,20 @@ def test_round_trip_with_pending_and_last_outcome_none(tmp_path: Path):
 
 # AC9.2
 def test_path_is_guild_then_channel_json(tmp_path: Path):
-    assert Store(tmp_path).path("111", "222") == tmp_path / "guilds" / "111" / "222.json"
+    assert Store(tmp_path, ruleset=RULESET).path("111", "222") == tmp_path / "guilds" / "111" / "222.json"
 
 
 # AC9.2
 def test_same_channel_id_in_two_guilds_gives_two_independent_files(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     t1 = make_table(["5S"], trump="H", seed=1)
     t2 = make_table(["KD"], trump="C", seed=2)
     store.save("111", "222", t1)
     store.save("333", "222", t2)
     assert store.path("111", "222") != store.path("333", "222")
     assert store.path("111", "222").is_file() and store.path("333", "222").is_file()
-    a, _ = Store(tmp_path).load("111", "222")
-    b, _ = Store(tmp_path).load("333", "222")
+    a, _ = Store(tmp_path, ruleset=RULESET).load("111", "222")
+    b, _ = Store(tmp_path, ruleset=RULESET).load("333", "222")
     assert state(a) == state(t1)
     assert state(b) == state(t2)
 
@@ -111,12 +110,12 @@ def test_same_channel_id_in_two_guilds_gives_two_independent_files(tmp_path: Pat
 ])
 def test_non_snowflake_ids_are_rejected(tmp_path: Path, guild: str, channel: str):
     with pytest.raises(ValueError):
-        Store(tmp_path).path(guild, channel)
+        Store(tmp_path, ruleset=RULESET).path(guild, channel)
 
 
 # AC9.3
 def test_failed_mid_write_leaves_previous_file_intact(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     original = make_table(["KC"], trump="S", seed=3)
     store.save(GUILD, CHANNEL, original)
     before = store.path(GUILD, CHANNEL).read_bytes()
@@ -131,14 +130,14 @@ def test_failed_mid_write_leaves_previous_file_intact(tmp_path: Path, monkeypatc
         store.save(GUILD, CHANNEL, modified)
 
     assert store.path(GUILD, CHANNEL).read_bytes() == before
-    loaded, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    loaded, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert state(loaded) == state(original)
     assert not [p for p in store.path(GUILD, CHANNEL).parent.iterdir() if p.name.endswith(".tmp")]
 
 
 # AC9.3
 def test_failed_replace_leaves_previous_file_and_no_temp_file(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     original = make_table(["KC"], trump="S", seed=5)
     store.save(GUILD, CHANNEL, original)
     directory = store.path(GUILD, CHANNEL).parent
@@ -151,7 +150,7 @@ def test_failed_replace_leaves_previous_file_and_no_temp_file(tmp_path: Path, mo
         store.save(GUILD, CHANNEL, make_table(["2D"], trump="H", seed=6))
     monkeypatch.undo()
 
-    loaded, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    loaded, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert state(loaded) == state(original)
     assert not [p.name for p in directory.iterdir() if p.name.endswith(".tmp")]
 
@@ -169,7 +168,7 @@ CORRUPT_TEXTS = {
 # AC9.4
 @pytest.mark.parametrize("text", list(CORRUPT_TEXTS.values()), ids=list(CORRUPT_TEXTS))
 def test_corrupt_file_is_renamed_and_replaced_with_fresh_deck(tmp_path: Path, text: str):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text(text, encoding="utf-8")
@@ -184,13 +183,13 @@ def test_corrupt_file_is_renamed_and_replaced_with_fresh_deck(tmp_path: Path, te
     corrupt = path.with_name(path.name + ".corrupt")
     assert corrupt.read_text(encoding="utf-8") == text
     # The replacement is a valid file that a new Store reads back.
-    reloaded, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    reloaded, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert state(reloaded) == state(table)
 
 
 # AC9.4 (through transact, so the notice reaches the command)
 async def test_transact_passes_corrupt_reset_notice_to_fn(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
@@ -202,13 +201,13 @@ async def test_transact_passes_corrupt_reset_notice_to_fn(tmp_path: Path):
 
 # AC9.5
 async def test_state_survives_a_new_store(tmp_path: Path):
-    store_a = Store(tmp_path)
+    store_a = Store(tmp_path, ruleset=RULESET)
     await store_a.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE))
     await store_a.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE))
     expected_draw = store_a.load(GUILD, CHANNEL)[0].deck.draw_codes()
     expected_discards = store_a.load(GUILD, CHANNEL)[0].deck.discard_codes()
 
-    store_b = Store(tmp_path)
+    store_b = Store(tmp_path, ruleset=RULESET)
     table, notice = store_b.load(GUILD, CHANNEL)
     assert notice is None
     assert table.deck.draw_codes() == expected_draw
@@ -219,7 +218,7 @@ async def test_state_survives_a_new_store(tmp_path: Path):
 
 # AC9.6
 async def test_concurrent_flips_in_one_channel_lose_and_duplicate_no_card(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)  # create the fresh table
 
     replies = await asyncio.gather(*[
@@ -228,7 +227,7 @@ async def test_concurrent_flips_in_one_channel_lose_and_duplicate_no_card(tmp_pa
 
     assert all(r.tone != "error" for r in replies)
     assert len({r.cards[0].code for r in replies}) == 39
-    table = Store(tmp_path).load(GUILD, CHANNEL)[0]
+    table = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]
     assert table.deck.draw == []
     assert len(table.deck.discards) == 40
     assert len(unique_codes(table)) == 40
@@ -238,7 +237,7 @@ async def test_concurrent_flips_in_one_channel_lose_and_duplicate_no_card(tmp_pa
 # This alternation test is the one that guards the per-channel lock. The card-count test above
 # can pass without the lock, so do not delete this one as redundant.
 async def test_saves_for_one_channel_never_overlap(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
 
     events: list[str] = []
@@ -261,7 +260,7 @@ async def test_saves_for_one_channel_never_overlap(tmp_path: Path, monkeypatch):
 
 # AC9.6 (cancellation: the lock must outlast the orphaned save thread)
 async def test_cancelled_save_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
 
     events: list[str] = []
@@ -289,7 +288,7 @@ async def test_cancelled_save_keeps_lock_until_thread_finishes(tmp_path: Path, m
 
     # Disk ends consistent with memory: both flips are present, no card missing or doubled.
     memory, _ = store.load(GUILD, CHANNEL)
-    disk, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    disk, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert state(disk) == state(memory)
     assert len(unique_codes(disk)) == 40
     assert len(disk.deck.discards) == 1 + 2  # the turned-up card plus two flips
@@ -297,7 +296,7 @@ async def test_cancelled_save_keeps_lock_until_thread_finishes(tmp_path: Path, m
 
 # AC9.6 (a cancelled write that has finished keeps memory, which then matches disk)
 async def test_cancelled_completed_save_keeps_new_state_in_memory(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
     real_write = Store._write
     started: list[str] = []
@@ -316,7 +315,7 @@ async def test_cancelled_completed_save_keeps_new_state_in_memory(tmp_path: Path
         await task
 
     memory, _ = store.load(GUILD, CHANNEL)
-    disk, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    disk, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert len(memory.deck.discards) == 1 + 1  # the turned-up card plus the one flip
     assert state(disk) == state(memory)
 
@@ -332,7 +331,7 @@ async def _wait_for(events: list[str], marker: str) -> None:
 # AC9.6 (shutdown cancels every task on the loop, so the write thread must still hold the lock).
 # The write thread blocks on an event rather than a sleep, so the cancellation always lands mid-write.
 async def test_cancel_all_tasks_mid_write_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
     before = state(store.load(GUILD, CHANNEL)[0])
     events: list[str] = []
@@ -363,12 +362,12 @@ async def test_cancel_all_tasks_mid_write_keeps_lock_until_thread_finishes(tmp_p
     assert not store.lock(GUILD, CHANNEL).locked()
     # The write raised, so memory rolls back and matches the untouched file.
     assert state(store.load(GUILD, CHANNEL)[0]) == before
-    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == before
+    assert state(Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]) == before
 
 
 # AC9.6 (a write that finished after a cancel keeps the cancel as the outcome, with no masked error)
 async def test_cancel_all_tasks_mid_write_on_success_keeps_new_state(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
     real_write = Store._write
     events: list[str] = []
@@ -397,14 +396,14 @@ async def test_cancel_all_tasks_mid_write_on_success_keeps_new_state(tmp_path: P
     assert events == ["start", "end"]
     assert not store.lock(GUILD, CHANNEL).locked()
     memory, _ = store.load(GUILD, CHANNEL)
-    disk, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    disk, _ = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
     assert len(memory.deck.discards) == 1 + 1  # the turned-up card plus the one flip
     assert state(disk) == state(memory)
 
 
 # AC9.6 (rollback: a command that mutates and then raises leaves no trace)
 async def test_failed_action_rolls_back_memory_and_disk(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
     before = state(store.load(GUILD, CHANNEL)[0])
 
@@ -418,12 +417,12 @@ async def test_failed_action_rolls_back_memory_and_disk(tmp_path: Path):
     seen: list = []
     await store.transact(GUILD, CHANNEL, lambda t, n: seen.append(state(t)))
     assert seen == [before]
-    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == before
+    assert state(Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]) == before
 
 
 # AC9.3 (rollback: a save that fails after the action mutated memory)
 async def test_failed_save_rolls_memory_back_to_match_file(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
     before = state(store.load(GUILD, CHANNEL)[0])
 
@@ -438,12 +437,12 @@ async def test_failed_save_rolls_memory_back_to_match_file(tmp_path: Path, monke
     seen: list = []
     await store.transact(GUILD, CHANNEL, lambda t, n: seen.append(state(t)))
     assert seen == [before]
-    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == before
+    assert state(Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]) == before
 
 
 # AC9.3 (a failing directory fsync is best-effort: the replace already happened)
 def test_directory_fsync_failure_does_not_fail_save(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     t = make_table(["KC"], trump="S", seed=7)
     real_fsync = os.fsync
 
@@ -455,13 +454,13 @@ def test_directory_fsync_failure_does_not_fail_save(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(store_mod.os, "fsync", failing_fsync)
     store.save(GUILD, CHANNEL, t)  # must not raise
     monkeypatch.undo()
-    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == state(t)
+    assert state(Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]) == state(t)
 
 
 # AC9.3 (the rename is made durable by fsyncing the parent directory)
 @pytest.mark.skipif(os.name != "posix", reason="directory fsync is POSIX-only")
 def test_save_fsyncs_parent_directory(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     t = make_table(["KC"], trump="S", seed=7)
     real_fsync = os.fsync
     directory_fsyncs: list[tuple[int, int]] = []
@@ -483,7 +482,7 @@ def test_save_fsyncs_parent_directory(tmp_path: Path, monkeypatch):
 
 # AC1.6
 def test_missing_file_gives_fresh_table_with_trump_notice_and_writes_file(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     table, notice = store.load(GUILD, CHANNEL)
     assert notice == new_table_notice(table)
     assert store.path(GUILD, CHANNEL).is_file()
@@ -491,7 +490,7 @@ def test_missing_file_gives_fresh_table_with_trump_notice_and_writes_file(tmp_pa
 
 # AC1.6 (second load is served from the in-memory cache)
 def test_second_load_on_same_store_returns_no_notice(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     first, _ = store.load(GUILD, CHANNEL)
     second, notice = store.load(GUILD, CHANNEL)
     assert second is first
@@ -500,14 +499,14 @@ def test_second_load_on_same_store_returns_no_notice(tmp_path: Path):
 
 # AC9.4 (a second corruption of the same channel must not overwrite the first .corrupt copy)
 def test_second_corruption_keeps_first_corrupt_copy(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text("{first", encoding="utf-8")
     store.load(GUILD, CHANNEL)
 
     path.write_text("{second", encoding="utf-8")
-    Store(tmp_path).load(GUILD, CHANNEL)
+    Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
 
     assert path.with_name(path.name + ".corrupt").read_text(encoding="utf-8") == "{first"
     assert path.with_name(path.name + ".corrupt.1").read_text(encoding="utf-8") == "{second"
@@ -562,7 +561,7 @@ BAD_FIELDS = [
 def test_loose_field_values_are_treated_as_corrupt(tmp_path: Path, apply, value):
     d = dict_with_outcome()
     apply(d, value)
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(d), encoding="utf-8")
@@ -571,20 +570,20 @@ def test_loose_field_values_are_treated_as_corrupt(tmp_path: Path, apply, value)
 
     assert notice is not None and "unreadable" in notice
     assert path.with_name(path.name + ".corrupt").is_file()
-    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == state(table)
+    assert state(Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]) == state(table)
 
 
 # AC9.4 (valid values still load: the stricter checks must not reject real state)
 def test_strict_validation_accepts_good_state(tmp_path: Path):
     t = make_table(["KC", "2H"], trump="S", pending=Pending("42", "redraw_upgrade"),
                    last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()), aces_drawn=4)
-    rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!")
+    rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!", ruleset=RULESET)
     assert state(rebuilt) == state(t)
 
 
 # AC9.4 (deeply nested JSON raises RecursionError, which must count as corrupt)
 def test_deeply_nested_json_is_treated_as_corrupt(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
@@ -598,7 +597,7 @@ def test_deeply_nested_json_is_treated_as_corrupt(tmp_path: Path):
 
 # AC1.7: a non-creating transaction on a channel with no deck writes nothing and caches nothing
 async def test_non_creating_transact_on_missing_file_writes_nothing(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     seen: list = []
 
     result = await store.transact(GUILD, CHANNEL, lambda t, n: seen.append((t, n)) or "done",
@@ -612,7 +611,7 @@ async def test_non_creating_transact_on_missing_file_writes_nothing(tmp_path: Pa
 
 # AC1.7 (no phantom table in the cache: a later load still creates and announces the deck)
 async def test_non_creating_transact_does_not_cache_a_table(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     await store.transact(GUILD, CHANNEL, lambda t, n: None, create=False)
 
     table, notice = store.load(GUILD, CHANNEL)
@@ -624,7 +623,7 @@ async def test_non_creating_transact_does_not_cache_a_table(tmp_path: Path):
 
 # AC1.7 / AC1.6: a creating transact after a non-creating one creates the deck and announces it
 async def test_creating_transact_after_non_creating_one_announces_new_deck(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     await store.transact(GUILD, CHANNEL, lambda t, n: None, create=False)
 
     seen: list = []
@@ -636,7 +635,7 @@ async def test_creating_transact_after_non_creating_one_announces_new_deck(tmp_p
 
 # AC1.7 (an existing deck is handed to a non-creating transaction, with no notice)
 async def test_non_creating_transact_on_existing_deck_gets_the_table(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     await store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE))
     before = state(store.load(GUILD, CHANNEL)[0])
 
@@ -648,7 +647,7 @@ async def test_non_creating_transact_on_existing_deck_gets_the_table(tmp_path: P
 
 # AC9.4 / AC1.7: a corrupt file with a non-creating transaction is set aside, and no deck is made
 async def test_non_creating_transact_on_corrupt_file_sets_it_aside_without_a_deck(tmp_path: Path):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
@@ -665,7 +664,7 @@ async def test_non_creating_transact_on_corrupt_file_sets_it_aside_without_a_dec
 
 # AC9.6: creating and non-creating transactions on one channel never overlap their saves
 async def test_mixed_creating_and_non_creating_saves_never_overlap(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     store.load(GUILD, CHANNEL)
 
     events: list[str] = []
@@ -686,7 +685,7 @@ async def test_mixed_creating_and_non_creating_saves_never_overlap(tmp_path: Pat
 
     assert len(events) == 2 * 40
     assert all(e == ("start" if i % 2 == 0 else "end") for i, e in enumerate(events))
-    table = Store(tmp_path).load(GUILD, CHANNEL)[0]
+    table = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0]
     assert len(unique_codes(table)) == 40
 
 
@@ -694,7 +693,7 @@ async def test_mixed_creating_and_non_creating_saves_never_overlap(tmp_path: Pat
 async def test_non_creating_jobs_before_creating_ones_see_no_deck_then_one_announces(
     tmp_path: Path, monkeypatch
 ):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     path = store.path(GUILD, CHANNEL)
     events: list[str] = []
     real_write = Store._write
@@ -731,12 +730,12 @@ async def test_non_creating_jobs_before_creating_ones_see_no_deck_then_one_annou
     assert sum(1 for e in seen if e[2] is not None) == 1
     assert len(events) == 2 * 4   # one creation save plus one flip save per creating job
     assert all(e == ("start" if i % 2 == 0 else "end") for i, e in enumerate(events))
-    assert len(unique_codes(Store(tmp_path).load(GUILD, CHANNEL)[0])) == 40
+    assert len(unique_codes(Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)[0])) == 40
 
 
 # AC9.6 (cancellation during the load for a non-creating transaction still holds the lock)
 async def test_cancel_during_non_creating_load_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
-    store = Store(tmp_path)
+    store = Store(tmp_path, ruleset=RULESET)
     real_load = store.load
     events: list[str] = []
 
@@ -773,11 +772,11 @@ def test_v1_state_file_is_set_aside_as_corrupt(tmp_path: Path, v1_shaped_body: b
         outcome[labels.failure_points.lower()] = outcome.pop("failure_points")
         del outcome["special"]
     old["version"] = 1
-    path = Store(tmp_path).path(GUILD, CHANNEL)
+    path = Store(tmp_path, ruleset=RULESET).path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(old), "utf-8")
 
-    loaded, notice = Store(tmp_path).load(GUILD, CHANNEL)
+    loaded, notice = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
 
     assert notice is not None and notice.startswith(store_mod.UNREADABLE_RESET)
     assert loaded.last_outcome is None
@@ -795,11 +794,11 @@ def test_v2_state_file_is_set_aside_as_corrupt(tmp_path: Path):
     del old["last_outcome"]["redraw"]
     old["pending"]["kind"] = "grumble_redraw"
     old["version"] = 2
-    path = Store(tmp_path).path(GUILD, CHANNEL)
+    path = Store(tmp_path, ruleset=RULESET).path(GUILD, CHANNEL)
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(old), "utf-8")
 
-    loaded, notice = Store(tmp_path).load(GUILD, CHANNEL)
+    loaded, notice = Store(tmp_path, ruleset=RULESET).load(GUILD, CHANNEL)
 
     assert notice is not None and notice.startswith(store_mod.UNREADABLE_RESET)
     assert loaded.pending is None and loaded.last_outcome is None

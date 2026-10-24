@@ -17,10 +17,10 @@ from green_oaks_bot.ruleset import (
     HINT_FIELDS,
     RedrawOption,
     RulesetError,
-    default_ruleset,
     load_ruleset,
     ruleset_from_dict,
 )
+from tests.helpers import default_ruleset
 
 PACKAGED = tomllib.loads(DEFAULT_RULES_FILE.read_text("utf-8"))
 SECTIONS = [(is_trump, cat) for is_trump in (True, False) for cat in CATEGORIES]

@@ -27,6 +27,7 @@ from tests.fakes import (
     make_rest_app,
     send,
 )
+from tests.helpers import RULESET
 
 BOUND = 30  # seconds: generous for a cold interpreter, still a hard stop
 
@@ -200,7 +201,7 @@ async def test_run_opens_the_session_with_the_bounded_http_timeout(monkeypatch, 
                     log_level="INFO")
 
     with pytest.raises(Refused):
-        await entry.run(config, CardImages(DEFAULT_ASSETS_DIR))
+        await entry.run(config, CardImages(DEFAULT_ASSETS_DIR), RULESET)
 
     assert opened == [entry.HTTP_TIMEOUT]  # what run() actually passed, not just the constant
     assert entry.HTTP_TIMEOUT.total == 30  # aiohttp's default is 300 s

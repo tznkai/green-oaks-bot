@@ -6,11 +6,8 @@ import pytest
 
 from green_oaks_bot.deck import Card, Rank, Suit
 from green_oaks_bot.rules import describe, resolve
-from green_oaks_bot.ruleset import default_ruleset
 from green_oaks_bot.table import Pending, Table, new_table_notice
-from tests.helpers import ALICE, BOB, GM, make_table
-
-RULESET = default_ruleset()
+from tests.helpers import ALICE, BOB, GM, RULESET, make_table
 
 HINT = "GM: time to `!shuffle`"
 
@@ -38,8 +35,8 @@ def test_flip_with_empty_draw_is_refused_with_hint_and_state_unchanged():
 
 # AC1.5
 def test_channels_have_independent_decks_and_state():
-    a = Table.new(random.Random(1))
-    b = Table.new(random.Random(1))
+    a = Table.new(random.Random(1), ruleset=RULESET)
+    b = Table.new(random.Random(1), ruleset=RULESET)
     b_before = snapshot(b)
     a.flip(ALICE)
     assert snapshot(b) == b_before
@@ -47,8 +44,8 @@ def test_channels_have_independent_decks_and_state():
 
 
 def test_actions_in_one_channel_do_not_touch_another_after_shuffle():
-    a = Table.new(random.Random(1))
-    b = Table.new(random.Random(2))
+    a = Table.new(random.Random(1), ruleset=RULESET)
+    b = Table.new(random.Random(2), ruleset=RULESET)
     b_before = snapshot(b)
     a.shuffle(GM)
     assert snapshot(b) == b_before
@@ -56,7 +53,7 @@ def test_actions_in_one_channel_do_not_touch_another_after_shuffle():
 
 # AC1.6
 def test_new_table_has_39_draw_one_discard_trump_matching_it():
-    t = Table.new(random.Random(3))
+    t = Table.new(random.Random(3), ruleset=RULESET)
     assert len(t.deck.draw) == 39
     assert len(t.deck.discards) == 1
     turned = t.deck.discards[0]
@@ -65,7 +62,7 @@ def test_new_table_has_39_draw_one_discard_trump_matching_it():
 
 
 def test_new_table_notice_names_trump_suit():
-    t = Table.new(random.Random(3))
+    t = Table.new(random.Random(3), ruleset=RULESET)
     assert t.trump.long_name in new_table_notice(t)
 
 
@@ -415,8 +412,8 @@ def test_gm_shuffle_returns_all_cards_turns_trump_and_clears_state():
 
 
 def test_same_seed_shuffles_identically():
-    a = Table.new(random.Random(9))
-    b = Table.new(random.Random(9))
+    a = Table.new(random.Random(9), ruleset=RULESET)
+    b = Table.new(random.Random(9), ruleset=RULESET)
     a.shuffle(GM)
     b.shuffle(GM)
     assert a.deck.draw == b.deck.draw

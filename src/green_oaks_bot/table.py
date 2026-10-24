@@ -15,7 +15,7 @@ from green_oaks_bot.rules import (
     resolve,
     upgrade,
 )
-from green_oaks_bot.ruleset import RedrawOption, Ruleset, default_ruleset
+from green_oaks_bot.ruleset import RedrawOption, Ruleset
 
 Tone = Literal["success", "failure", "special", "info", "error"]
 ImageMode = Literal["large", "small", "off"]
@@ -57,11 +57,11 @@ class Table:
     def __init__(self, deck: Deck, trump: Suit, rng: random.Random, *, prefix: str = "!",
                  aces_drawn: int = 0, pending: Pending | None = None,
                  last_outcome: Outcome | None = None, style: TextStyle = "long",
-                 images: ImageMode = "large", ruleset: Ruleset | None = None) -> None:
+                 images: ImageMode = "large", ruleset: Ruleset) -> None:
         self.deck = deck
         self.trump = trump
         self.rng = rng
-        self.ruleset: Ruleset = ruleset if ruleset is not None else default_ruleset()
+        self.ruleset = ruleset
         self.prefix = prefix
         self.aces_drawn = aces_drawn
         self.pending = pending
@@ -70,7 +70,7 @@ class Table:
         self.images: ImageMode = images
 
     @classmethod
-    def new(cls, rng: random.Random, *, prefix: str = "!", ruleset: Ruleset | None = None) -> Table:
+    def new(cls, rng: random.Random, *, prefix: str = "!", ruleset: Ruleset) -> Table:
         table = cls(Deck.fresh(), Suit.CLUBS, rng, prefix=prefix, ruleset=ruleset)
         table._shuffle_and_turn_trump()
         return table
