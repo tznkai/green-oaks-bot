@@ -48,6 +48,8 @@ class FakeFluxerState:
     members: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     # The next N message POSTs answer 429 (RATE_LIMIT_BODY).
     rate_limit_next: int = 0
+    # When True, multipart message POSTs (attachments) get 403, as without Attach Files.
+    forbid_attachments: bool = False
     # Keyed by "METHOD /path"; checked before any default behaviour.
     overrides: dict[str, Override] = field(default_factory=dict)
     requests: list[Recorded] = field(default_factory=list)
@@ -124,6 +126,9 @@ def make_rest_app(state: FakeFluxerState) -> web.Application:
         else:
             payload = await request.json()
             files = []
+        if files and state.forbid_attachments:
+            return _send(state, request, 403, {"code": "MISSING_PERMISSIONS", "message": "Missing Permissions"},
+                         payload=payload, files=files)
         if state.rate_limit_next > 0:
             state.rate_limit_next -= 1
             return _send(state, request, 429, RATE_LIMIT_BODY, payload=payload, files=files)

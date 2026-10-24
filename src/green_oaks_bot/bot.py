@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from green_oaks_bot.commands import Command, execute, parse
-from green_oaks_bot.fluxer.rest import FluxerREST, reply_to_embed
+from green_oaks_bot.fluxer.rest import FluxerHTTPError, FluxerREST, reply_to_embed
 from green_oaks_bot.fluxer.roles import GMResolver
 from green_oaks_bot.ids import is_snowflake
 from green_oaks_bot.render import CardImages
@@ -43,6 +43,7 @@ class Bot:
         self.user_id: str | None = None
         self._ready_logged = False
         self._dm_notified: set[str] = set()
+        self._attach_warned = False
 
     def on_ready(self, user_id: str) -> None:
         self.user_id = user_id
@@ -59,6 +60,26 @@ class Bot:
                 await self.on_message(data)
         except Exception:
             log.exception("unhandled error processing %s", event)
+
+    async def _send_reply(self, channel_id: str, reply: Reply, png: bytes | None,
+                          reply_to: str | None) -> None:
+        """Send the card; a 403 on the attachment (no Attach Files permission) retries without it.
+
+        The deck has already changed by the time we send, so a lost reply is worse than a
+        text-only one. A failure of the retry falls through to the caller's error reply.
+        """
+        try:
+            await self.rest.send_message(channel_id, reply_to_embed(reply, png is not None), png,
+                                         reply_to=reply_to)
+        except FluxerHTTPError as exc:
+            if png is None or exc.status != 403:
+                raise
+            if not self._attach_warned:
+                self._attach_warned = True
+                log.warning("could not attach the card image (HTTP 403); the bot needs the "
+                            "Attach Files permission in this channel. Sending text only.")
+            await self.rest.send_message(channel_id, reply_to_embed(reply, False), None,
+                                         reply_to=reply_to)
 
     async def on_message(self, d: dict[str, Any]) -> None:
         author = d.get("author") or {}
@@ -93,8 +114,7 @@ class Bot:
             reply, mode = await self.store.transact(
                 guild_id, channel_id, lambda table, notice: (execute(cmd, table, actor, notice), table.images))
             png = await asyncio.to_thread(self.images.render, reply.cards, reply.kept_index, mode)
-            await self.rest.send_message(channel_id, reply_to_embed(reply, png is not None), png,
-                                         reply_to=reply_to)
+            await self._send_reply(channel_id, reply, png, reply_to)
         except Exception:
             log.exception("command %r failed in guild %s channel %s", cmd.name, guild_id, channel_id)
             try:

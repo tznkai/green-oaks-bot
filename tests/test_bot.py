@@ -390,3 +390,29 @@ async def test_malformed_message_id_drops_only_the_reply_reference(fake, session
     assert sent.path == MESSAGES
     assert "message_reference" not in sent.payload
     assert "Trump:" in sent.payload["embeds"][0]["description"]
+
+
+# Without the Attach Files permission the card is still saved: the reply goes out text-only
+
+
+async def test_403_on_attachment_retries_text_only_and_warns_once(fake, session, tmp_path, images, caplog):
+    state, api = fake
+    state.forbid_attachments = True
+    bot = make_bot(session, api, tmp_path, images)
+
+    with caplog.at_level(logging.WARNING, logger="green_oaks_bot"):
+        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40001"))
+        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
+
+    sent = messages(state)
+    assert [(r.content_type, r.status) for r in sent] == [
+        ("multipart/form-data", 403), ("application/json", 200),
+        ("multipart/form-data", 403), ("application/json", 200),
+    ]
+    for reply in sent[1::2]:
+        description = reply.payload["embeds"][0]["description"]
+        assert "image" not in reply.payload["embeds"][0]
+        assert "Something went wrong" not in description
+        assert description  # the command's own text, not the generic error
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "Attach Files" in r.getMessage()]
+    assert len(warnings) == 1
