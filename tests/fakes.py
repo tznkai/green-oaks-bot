@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Fake Fluxer servers built on aiohttp.web, driven through pytest-aiohttp's aiohttp_server.
 
 `FakeFluxerState` is the single place tests configure and inspect the fake. Routes are

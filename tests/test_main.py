@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Process-level behaviour of `python -m green_oaks_bot` against in-test fakes.
 
 Every wait is bounded (asyncio.wait_for), and a child that is still alive when a test ends is killed.

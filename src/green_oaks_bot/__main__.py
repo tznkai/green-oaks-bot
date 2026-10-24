@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Entry point: python -m green_oaks_bot"""
 
 from __future__ import annotations

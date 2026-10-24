@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Prefix command parsing and dispatch to Table methods."""
 
 from __future__ import annotations
@@ -69,6 +71,8 @@ def help_text(prefix: str, ruleset: Ruleset | None = None) -> str:
         f"`{p}style emoji|short|long`: how card names are written",
         f"`{p}images large|small|off`: card image size",
         f"`{p}help`: this list",
+        # Rules-neutral credit line; the full attribution is in the README's Licensing section.
+        "Rules: Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0. See the README, Licensing.",
     ])
 
 

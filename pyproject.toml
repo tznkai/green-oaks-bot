@@ -7,6 +7,10 @@ name = "green-oaks-bot"
 version = "0.1.0"
 description = "Fluxer bot for Green Oaks ArterioscleroSys card checks"
 readme = "README.md"
+# The engine is AGPL-3.0-or-later. The bundled rules file (src/green_oaks_bot/rulesets/) is
+# CC BY-NC-SA 4.0, so a distribution that includes it is under both. See README.md, Licensing.
+license = "AGPL-3.0-or-later AND CC-BY-NC-SA-4.0 AND LicenseRef-PublicDomain-vector-playing-cards"
+license-files = ["LICENSES/*.txt"]
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.11",

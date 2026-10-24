@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Per-channel game table: every game action returns a Reply."""
 
 from __future__ import annotations

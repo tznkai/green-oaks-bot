@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Fluxer gateway client tests against the fake gateway (real aiohttp websockets).
 
 Every wait is bounded: `until` and `expect` have deadlines, and each scenario ends

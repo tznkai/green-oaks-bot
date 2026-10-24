@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Loading the rules data file: the packaged ruleset is complete, and a broken one is refused clearly."""
 
 from __future__ import annotations

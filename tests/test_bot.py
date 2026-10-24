@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Bot wiring against the fake REST app, real Store and real CardImages (AC10.8-10.10, AC3.1, AC8.1)."""
 
 from __future__ import annotations

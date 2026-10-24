@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
 from green_oaks_bot.deck import FULL_DECK, Card, Rank, Suit

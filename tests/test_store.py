@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Per-channel persistence: round-trips, atomic saves, corrupt-file recovery, transactions."""
 
 from __future__ import annotations

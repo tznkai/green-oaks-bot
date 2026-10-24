@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Test helpers: build table state directly so tests never depend on shuffle order."""
 
 from __future__ import annotations

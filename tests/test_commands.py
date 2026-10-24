@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import random
 
 import pytest
@@ -57,6 +59,14 @@ def test_help_lists_every_command():
     for name in ["flip", "adv", "dis", "grumble", "trump", "shuffle", "status", "style",
                  "images", "help"]:
         assert f"`!{name}" in reply.text, name
+
+
+def test_help_ends_with_rules_attribution_line():
+    # Licensing: the rules file is CC BY-NC-SA 4.0 and credits its publisher; the help footer links to it.
+    lines = execute(parse("!help", "!"), make_table(["5S"]), ALICE).text.splitlines()
+    assert lines[-1].startswith("Rules:")
+    assert "MS Edizioni" in lines[-1]
+    assert "CC BY-NC-SA 4.0" in lines[-1]
 
 
 # AC7.6: configurable prefix

@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# REUSE metadata for files that cannot carry an SPDX header. Python files carry their own headers.
+# The rules data file (src/green_oaks_bot/rulesets/green_oaks.toml) carries its own CC BY-NC-SA 4.0
+# header and is not listed here.
+
+version = 1
+
+# Card art: Byron Knoll's public-domain vector playing cards (see assets/cards/ATTRIBUTION.md).
+# The LicenseRef quotes his statement; it is not a Creative Commons licence.
+[[annotations]]
+path = "assets/cards/*.png"
+precedence = "override"
+SPDX-FileCopyrightText = "Byron Knoll"
+SPDX-License-Identifier = "LicenseRef-PublicDomain-vector-playing-cards"
+
+# ace_of_spades.png keeps Byron Knoll's frame and corner indices, but its centre pip was replaced
+# by K. Chen with a scaled copy of a pip from 2_of_spades.png (also Byron Knoll's work), via
+# tools/make_plain_ace_of_spades.py. The modification is a mechanical copy-and-rescale of public
+# domain art, so it is carried under the same LicenseRef rather than AGPL. See ATTRIBUTION.md.
+[[annotations]]
+path = "assets/cards/ace_of_spades.png"
+precedence = "override"
+SPDX-FileCopyrightText = ["Byron Knoll", "2026 K. Chen (centre pip replaced)"]
+SPDX-License-Identifier = "LicenseRef-PublicDomain-vector-playing-cards"
+
+# Text and build files written for this project: AGPL-3.0-or-later.
+[[annotations]]
+path = [
+    "assets/cards/ATTRIBUTION.md",
+    "README.md",
+    "docs/fluxer-notes.md",
+    "requirements.txt",
+    "pyproject.toml",
+    ".gitignore",
+]
+SPDX-FileCopyrightText = "2026 K. Chen"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

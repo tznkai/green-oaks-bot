@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Snowflake id validation, shared by the bot, the REST path builders and the Store."""
 
 from __future__ import annotations

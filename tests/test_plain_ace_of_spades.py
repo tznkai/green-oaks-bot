@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """AC11.5 (art): the Ace of Spades carries a plain centre pip, not the third-party ornate spade.
 
 The asset is produced by tools/make_plain_ace_of_spades.py. These tests check the committed PNG

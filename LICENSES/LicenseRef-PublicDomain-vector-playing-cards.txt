@@ -1,0 +1,13 @@
+Public domain (vector-playing-cards)
+
+The playing-card images in assets/cards/ (except the centre pip of ace_of_spades.png, see
+assets/cards/ATTRIBUTION.md) are the work of Byron Knoll, from the vector-playing-cards project.
+
+Source: https://code.google.com/archive/p/vector-playing-cards/ (Google Code Archive)
+
+Byron Knoll's statement, as given on that project:
+
+    "These images are released into the public domain - attribution is appreciated but not required."
+
+This is not a Creative Commons licence. The statement above is the
+whole licence text. Attribution is appreciated and is given in assets/cards/ATTRIBUTION.md.

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Wiring: one MESSAGE_CREATE -> parse -> lock -> Table -> save -> render -> send."""
 
 from __future__ import annotations

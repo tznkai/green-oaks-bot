@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Fluxer REST client tests against the fake server (no aiohttp internals mocked)."""
 
 from __future__ import annotations

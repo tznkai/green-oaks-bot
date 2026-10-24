@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Rules data: loaded once from a TOML file and handed to the engine as an immutable Ruleset.
 
 The engine is game-neutral. Every word that names a result (the outcome words, the points

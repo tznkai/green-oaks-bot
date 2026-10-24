@@ -23,8 +23,10 @@ The replacement centre is a plain spade pip taken from `2_of_spades.png` (also B
 scaled with LANCZOS to the size of the centre pip on `ace_of_hearts.png` and `ace_of_clubs.png`, and
 centred where their pips are. The card frame and corner indices are the original Byron Knoll artwork.
 
-The change is made by `tools/make_plain_ace_of_spades.py`, which is deterministic and rebuilds the
-file from the other card images in this directory.
+The change was made by K. Chen (2026) with `tools/make_plain_ace_of_spades.py`, which is deterministic
+and rebuilds the file from the other card images in this directory. Because the change is a
+mechanical copy and rescale of public-domain art, the file stays under the same public-domain
+LicenseRef as the other card images (see `REUSE.toml` and `LICENSES/`).
 
 ## Selection used by Green Oaks Bot
 

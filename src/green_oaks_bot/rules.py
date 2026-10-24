@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Resolution: card + trump -> Outcome, using the loaded Ruleset.
 
 No result wording lives here. The words and values come from the rules data file
