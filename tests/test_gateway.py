@@ -578,3 +578,23 @@ async def test_dispatch_handler_error_is_logged_with_traceback(aiohttp_server, s
     assert isinstance(record.exc_info[1], RuntimeError)
     assert str(record.exc_info[1]) == "handler boom"
 
+
+
+async def test_session_total_timeout_does_not_cut_the_websocket(aiohttp_server):
+    """The production session has a total timeout (HTTP_TIMEOUT); the socket must outlive it."""
+    async def script(ws, i, state):
+        await send(ws, 10, {"heartbeat_interval": 30000})  # no heartbeat during the sleep below
+        await expect(ws, 2)
+        await asyncio.sleep(0.8)  # well past the session total below
+        await send(ws, 0, {}, t="MESSAGE_CREATE", s=1)
+        await hold(ws)
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    events = Events()
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0.2)) as session:
+        gw = make_gateway(session, server, events)
+        async with running(gw):
+            await until(lambda: events.names() == ["MESSAGE_CREATE"], state)
+    assert state.close_codes[0] is not None
+    assert state.connections[0][0]["op"] == 2  # identified on the one and only socket

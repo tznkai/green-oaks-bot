@@ -20,13 +20,17 @@ from green_oaks_bot.store import Store
 
 log = logging.getLogger("green_oaks_bot")
 
+# REST calls and discovery. The gateway websocket has its own timeouts (ws_connect), which
+# this session-wide total does not limit: aiohttp applies it to plain requests only.
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
 
 async def run(config: Config, images: CardImages) -> None:
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         api, gateway_url = await resolve_endpoints(session, config)
         log.info("Fluxer API %s, gateway %s", api, gateway_url)
         rest = FluxerREST(session, api, config.token)
@@ -55,15 +59,16 @@ def main() -> int:
         return 2
     logging.basicConfig(level=config.log_level, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    images = CardImages(config.assets_dir)
-    log.info("loaded %d card images from %s", len(images), config.assets_dir)
     try:
+        images = CardImages(config.assets_dir)
+        log.info("loaded %d card images from %s", len(images), config.assets_dir)
         asyncio.run(run(config, images))
     except FatalGatewayError as exc:
         log.error("%s", exc)
         return 1
-    except (aiohttp.ClientError, FluxerHTTPError, OSError, KeyError, ValueError) as exc:
-        # e.g. discovery or /gateway/bot failed: bad URL, instance down, bad token (401)
+    except (aiohttp.ClientError, FluxerHTTPError, OSError, KeyError, ValueError, TypeError) as exc:
+        # e.g. missing card images, discovery or /gateway/bot failed: bad URL, instance down,
+        # bad token (401), or a discovery body that is JSON but not an object
         log.error("startup failed: %r", exc)
         return 1
     return 0
