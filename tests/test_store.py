@@ -686,6 +686,50 @@ async def test_mixed_creating_and_non_creating_saves_never_overlap(tmp_path: Pat
     assert len(unique_codes(table)) == 40
 
 
+# AC1.7 / AC9.6: no deck yet; non-creating jobs queued first see no deck, then one creating job makes it
+async def test_non_creating_jobs_before_creating_ones_see_no_deck_then_one_announces(
+    tmp_path: Path, monkeypatch
+):
+    store = Store(tmp_path)
+    path = store.path(GUILD, CHANNEL)
+    events: list[str] = []
+    real_write = Store._write
+
+    def traced_write(self, path, data):
+        events.append("start")
+        time.sleep(0.001)
+        real_write(self, path, data)
+        events.append("end")
+
+    monkeypatch.setattr(Store, "_write", traced_write)
+    seen: list[tuple[str, bool, str | None, bool]] = []
+
+    def record(tag: str):
+        def fn(t, n):
+            # (job, had a table, notice, file existed when the callback ran)
+            seen.append((tag, t is not None, n, path.exists()))
+            if t is not None:
+                t.flip(ALICE)
+        return fn
+
+    jobs = []
+    for _ in range(3):
+        jobs.append(store.transact(GUILD, CHANNEL, record("lazy"), create=False))
+    for _ in range(3):
+        jobs.append(store.transact(GUILD, CHANNEL, record("create"), create=True))
+    await asyncio.gather(*jobs)
+
+    lazy = [e for e in seen if e[0] == "lazy"]
+    creating = [e for e in seen if e[0] == "create"]
+    assert lazy == [("lazy", False, None, False)] * 3
+    assert [e[1] for e in creating] == [True, True, True]
+    assert [e[2] is not None and "New deck" in e[2] for e in creating] == [True, False, False]
+    assert sum(1 for e in seen if e[2] is not None) == 1
+    assert len(events) == 2 * 4   # one creation save plus one flip save per creating job
+    assert all(e == ("start" if i % 2 == 0 else "end") for i, e in enumerate(events))
+    assert len(unique_codes(Store(tmp_path).load(GUILD, CHANNEL)[0])) == 40
+
+
 # AC9.6 (cancellation during the load for a non-creating transaction still holds the lock)
 async def test_cancel_during_non_creating_load_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
     store = Store(tmp_path)

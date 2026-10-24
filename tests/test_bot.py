@@ -625,6 +625,26 @@ async def test_gm_shuffle_in_fresh_channel_announces_once_and_creates_one_deck(
     assert len(saved["discards"]) == 1
 
 
+async def test_non_creating_command_on_corrupt_state_reports_unreadable_and_keeps_file_aside(
+    fake, session, tmp_path, images
+):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+    path = state_file(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!status"))
+
+    (sent,) = messages(state)
+    description = sent.payload["embeds"][0]["description"]
+    assert "unreadable" in description
+    assert "This channel has no deck yet" in description
+    assert not path.exists()
+    assert path.with_name(path.name + ".corrupt").read_text("utf-8") == "{not json"
+    assert sorted(p.name for p in path.parent.iterdir()) == [path.name + ".corrupt"]
+
+
 async def test_non_creating_command_after_deck_exists_still_works(fake, session, tmp_path, images):
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)

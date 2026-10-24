@@ -290,3 +290,16 @@ def test_gm_shuffle_on_new_deck_announces_without_a_second_shuffle():
     assert reply.text == notice
     assert reply.text.count("turned up") == 1
     assert reply.cards == (table.deck.discards[0],)
+
+
+# AC1.8: the store's creation notice never lets a non-GM shuffle through; it is refused as usual
+def test_non_gm_shuffle_with_notice_is_refused_not_reshuffled():
+    t = Table.new(random.Random(12))
+    notice = new_table_notice(t)
+    before = (t.deck.draw_codes(), t.deck.discard_codes(), t.trump)
+
+    reply = execute(parse("!shuffle", "!"), t, ALICE, notice=notice)
+
+    assert reply.tone == "error"
+    assert "Only the GM can shuffle" in reply.text
+    assert (t.deck.draw_codes(), t.deck.discard_codes(), t.trump) == before
