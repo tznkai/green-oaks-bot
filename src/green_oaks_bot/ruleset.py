@@ -148,15 +148,31 @@ def _bool(d: Mapping[str, Any], key: str, where: str, source: str) -> bool:
 
 def _template(d: Mapping[str, Any], key: str, where: str, source: str,
               allowed: frozenset[str] = frozenset()) -> str:
-    """A non-empty format string that uses only the common fields and `allowed`."""
+    """A non-empty format string that renders with the common fields and `allowed`, and nothing else.
+
+    The field names are checked first, then the template is rendered once with sample values of the
+    types the engine passes (strings, and an int for upgrade_points). That catches what the name check
+    cannot see: fields nested in a format spec, unknown conversions, and format specs that do not
+    suit the value. Without it those templates load and then fail in the middle of a game.
+    """
     value = _text(d, key, where, source)
     try:
         names = [name for _, name, _, _ in string.Formatter().parse(value) if name is not None]
     except ValueError as exc:
         raise _fail(source, f"[{where}] {key} is not a valid template: {exc}") from None
+    if "" in names:
+        raise _fail(source, f"[{where}] {key} uses positional field `{{}}`; name the field instead")
     unknown = sorted(set(names) - _COMMON_FIELDS - allowed)
     if unknown:
         raise _fail(source, f"[{where}] {key} uses unknown field(s): {', '.join(unknown)}")
+    sample: dict[str, object] = {name: "x" for name in _COMMON_FIELDS | allowed}
+    sample["upgrade_points"] = 0
+    try:
+        value.format_map(sample)
+    except KeyError as exc:
+        raise _fail(source, f"[{where}] {key} uses a field that is not allowed here: {exc.args[0]}") from None
+    except (ValueError, IndexError, AttributeError, TypeError) as exc:
+        raise _fail(source, f"[{where}] {key} does not render: {exc}") from None
     return value
 
 

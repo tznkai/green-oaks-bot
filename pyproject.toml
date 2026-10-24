@@ -9,9 +9,12 @@ description = "Fluxer bot for Green Oaks ArterioscleroSys card checks"
 readme = "README.md"
 # The engine is AGPL-3.0-or-later. The bundled rules file (src/green_oaks_bot/rulesets/) is
 # CC BY-NC-SA 4.0, so a distribution that includes it is under both. See README.md, Licensing.
-# The wheel ships the engine and the rules file only. The card images (public domain, the
-# LicenseRef in LICENSES/) live in assets/cards/ and are not in the package, so the expression
-# and the license files name only what the wheel contains.
+# The license expression and license-files describe the installed package (the engine and the
+# rules file), and the wheel and the sdist share this metadata. The source distribution and the
+# repository also carry the public-domain card images (assets/cards/, LicenseRef-PublicDomain-
+# vector-playing-cards; see REUSE.toml and LICENSES/). They are not listed here: hatchling would
+# have to add that licence text to the wheel too, and the wheel does not ship the images.
+# See README.md, Licensing.
 license = "AGPL-3.0-or-later AND CC-BY-NC-SA-4.0"
 license-files = ["LICENSES/AGPL-3.0-or-later.txt", "LICENSES/CC-BY-NC-SA-4.0.txt"]
 requires-python = ">=3.12"

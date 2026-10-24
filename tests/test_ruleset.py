@@ -205,6 +205,24 @@ def test_a_misspelt_or_dotted_field_is_refused(template):
         ruleset_from_dict(data, source="rules.toml")
 
 
+@pytest.mark.parametrize("template, message", [
+    ("{p:{x}}", r"uses a field that is not allowed here: x"),
+    ("{name:d}", r"does not render: Unknown format code 'd'"),
+    ("{name!z}", r"does not render: .*conversion"),
+    ("{}", r"uses positional field `\{\}`; name the field instead"),
+])
+def test_a_template_that_would_fail_when_rendered_is_refused_at_load(template, message):
+    data = broken(lambda d: d["hints"].__setitem__("may_replace", template))
+    with pytest.raises(RulesetError, match=r"\[hints\] may_replace " + message):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+def test_a_nested_field_the_engine_passes_is_accepted():
+    data = broken(lambda d: d["hints"].__setitem__("may_replace", "{name:>{upgrade_points}}"))
+    ruleset = ruleset_from_dict(data, source="rules.toml")
+    assert ruleset.hint("may_replace", "!", name="Ada") == f"{'Ada':>{ruleset.upgrade_points}}"
+
+
 def test_an_unbalanced_brace_is_refused():
     data = broken(lambda d: d["help"].__setitem__("title", "Commands {"))
     with pytest.raises(RulesetError, match=r"\[help\] title is not a valid template"):

@@ -30,8 +30,11 @@ This project is split into two licensed parts, so that the engine can be reused 
 do not remove the CC BY-NC-SA 4.0 terms on the rules file. A copy of this project that contains the rules file may be
 shared and changed only non-commercially, under share-alike terms; a copy built without it (the engine alone, with its
 own rules file written from scratch) is under the AGPL alone. The Python package's `license` field records the combined
-expression, `AGPL-3.0-or-later AND CC-BY-NC-SA-4.0`. The wheel carries the two licence texts that apply to its contents;
-the public-domain card images are not in the wheel.
+expression, `AGPL-3.0-or-later AND CC-BY-NC-SA-4.0`, and describes the installed package (engine and rules file). The wheel
+and the source distribution share that metadata and carry the two licence texts it names. The source distribution and
+the repository also carry the public-domain card images under `LicenseRef-PublicDomain-vector-playing-cards`; that
+licence is not in the package metadata, because the wheel does not ship the images. Its text is in `LICENSES/`, and
+`REUSE.toml` and `assets/cards/ATTRIBUTION.md` say which files it covers.
 
 ### Attribution: *Green Oaks* (MS Edizioni)
 
