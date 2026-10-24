@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import aiohttp
 import pytest
 
@@ -54,12 +52,12 @@ def config_from(**env: str) -> Config:
 
 
 async def test_discover_api_returns_api_public_from_well_known(fake, session):
-    state, base = fake
+    _, base = fake
     assert await discover_api(session, base) == f"{base}/api"
 
 
 async def test_discover_api_tolerates_trailing_slash(fake, session):
-    state, base = fake
+    _, base = fake
     assert await discover_api(session, base + "/") == f"{base}/api"
 
 
@@ -180,6 +178,25 @@ async def test_429_is_retried_after_retry_after_with_intact_multipart(fake, sess
     assert [r.status for r in attempts] == [429, 429, 200]
     assert attempts[-1].files == [("card.png", PNG)]
     assert attempts[-1].payload["embeds"][0]["image"]["url"] == "attachment://card.png"
+
+
+async def test_form_factory_is_called_once_per_attempt(fake, session):
+    state, base = fake
+    state.rate_limit_next = 2
+    built: list[int] = []
+
+    def form() -> aiohttp.FormData:
+        built.append(len(built))
+        fd = aiohttp.FormData()
+        fd.add_field("payload_json", "{}", content_type="application/json")
+        fd.add_field("files[0]", PNG, filename="card.png", content_type="image/png")
+        return fd
+
+    rest = make_rest(session, base)
+    await rest.request("POST", "/channels/c1/messages", form=form)
+    assert built == [0, 1, 2]
+    assert [r.status for r in state.requests_to(MESSAGES)] == [429, 429, 200]
+    assert state.requests_to(MESSAGES)[-1].files == [("card.png", PNG)]
 
 
 async def test_429_after_max_retries_raises_fluxer_http_error(fake, session):
