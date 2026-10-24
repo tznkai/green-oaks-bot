@@ -72,6 +72,13 @@ def test_missing_rules_file_is_a_ruleset_error(tmp_path: Path):
         load_ruleset(tmp_path / "absent.toml")
 
 
+def test_a_file_that_is_not_utf8_is_a_ruleset_error(tmp_path: Path):
+    path = tmp_path / "rules.toml"
+    path.write_bytes(b'[labels]\nsuccess = "\xff\xfe"\n')
+    with pytest.raises(RulesetError, match="not valid UTF-8"):
+        load_ruleset(path)
+
+
 def test_malformed_toml_is_a_ruleset_error(tmp_path: Path):
     path = tmp_path / "rules.toml"
     path.write_text("[labels\nsuccess = ", "utf-8")
@@ -87,7 +94,22 @@ def test_a_missing_category_is_named_in_the_error(is_trump, cat):
         ruleset_from_dict(data, source="rules.toml")
 
 
-@pytest.mark.parametrize("section", ["labels", "redraw", "help", "hints"])
+@pytest.mark.parametrize("section", ["labels", "redraw", "help", "hints", "trump", "non_trump"])
+def test_a_section_that_is_not_a_table_is_refused_as_such(section):
+    data = broken(lambda d: d.__setitem__(section, 5))
+    with pytest.raises(RulesetError, match=rf"\[{section}\] must be a table, not int"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+@pytest.mark.parametrize("is_trump, cat", SECTIONS, ids=[section_name(*s) for s in SECTIONS])
+def test_a_category_that_is_not_a_table_is_named_with_its_parent(is_trump, cat):
+    name = section_name(is_trump, cat)
+    data = broken(lambda d: d[name.split(".")[0]].__setitem__(cat, "pip"))
+    with pytest.raises(RulesetError, match=rf"\[{name}\] must be a table, not str"):
+        ruleset_from_dict(data, source="rules.toml")
+
+
+@pytest.mark.parametrize("section", ["labels", "redraw", "help", "hints", "trump", "non_trump"])
 def test_a_missing_section_is_refused(section):
     data = broken(lambda d: d.pop(section))
     with pytest.raises(RulesetError, match=section):

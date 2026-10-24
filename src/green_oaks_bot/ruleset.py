@@ -114,10 +114,14 @@ def _fail(source: str, message: str) -> RulesetError:
     return RulesetError(f"{source}: {message}")
 
 
-def _section(data: Mapping[str, Any], name: str, source: str) -> Mapping[str, Any]:
-    value = data.get(name)
+def _section(data: Mapping[str, Any], name: str, source: str, parent: str | None = None) -> Mapping[str, Any]:
+    """The table `name` inside `data`. `parent` is the dotted name of `data`, for the message."""
+    full = name if parent is None else f"{parent}.{name}"
+    if name not in data:
+        raise _fail(source, f"missing [{full}] section")
+    value = data[name]
     if not isinstance(value, Mapping):
-        raise _fail(source, f"missing [{name}] section")
+        raise _fail(source, f"[{full}] must be a table, not {type(value).__name__}")
     return value
 
 
@@ -206,9 +210,8 @@ def ruleset_from_dict(data: Mapping[str, Any], source: str = "rules file") -> Ru
         group = _section(data, section, source)
         _no_extra_keys(group, frozenset(CATEGORIES), section, source)
         for category in CATEGORIES:
-            if category not in group:
-                raise _fail(source, f"missing [{section}.{category}] section")
-            cells[(is_trump, category)] = _cell(_section(group, category, source), is_trump, category, source)
+            cell_d = _section(group, category, source, parent=section)
+            cells[(is_trump, category)] = _cell(cell_d, is_trump, category, source)
 
     help_d = _section(data, "help", source)
     _no_extra_keys(help_d, _HELP_KEYS, "help", source)
@@ -238,6 +241,8 @@ def load_ruleset(path: Path) -> Ruleset:
             data = tomllib.load(fh)
     except OSError as exc:
         raise RulesetError(f"cannot read rules file {path}: {exc.strerror or exc}") from exc
+    except UnicodeDecodeError as exc:  # tomllib decodes the bytes itself; this is not a TOML syntax error
+        raise RulesetError(f"rules file {path} is not valid UTF-8: {exc}") from exc
     except tomllib.TOMLDecodeError as exc:
         raise RulesetError(f"rules file {path} is not valid TOML: {exc}") from exc
     return ruleset_from_dict(data, source=str(path))
