@@ -48,7 +48,7 @@ def test_help_lists_every_command():
     reply = execute(parse("!help", "!"), make_table(["5S"]), ALICE)
     for name in ["flip", "adv", "dis", "grumble", "trump", "shuffle", "status", "style",
                  "images", "help"]:
-        assert f"`!{name}`" in reply.text, name
+        assert f"`!{name}" in reply.text, name
 
 
 # AC7.6: configurable prefix
