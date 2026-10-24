@@ -325,6 +325,44 @@ async def test_rest_failure_during_reply_is_contained(fake, session, tmp_path, i
     assert any(r.exc_info is not None for r in caplog.records)
 
 
+# AC10.10: on_dispatch's catch-all contains anything that escapes a handler
+
+
+async def test_dm_notice_rest_failure_is_caught_by_on_dispatch(
+    fake, session, tmp_path, images, caplog
+):
+    state, api = fake
+    state.overrides[f"POST {MESSAGES}"] = Override(
+        status=500, body=b'{"code":"INTERNAL","message":"down"}'
+    )
+    bot = make_bot(session, api, tmp_path, images)
+
+    # A DM has no guild_id, so the server-only notice is sent outside the per-command try.
+    with caplog.at_level(logging.ERROR, logger="green_oaks_bot"):
+        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", guild=None))
+
+    (record,) = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert record.exc_info is not None
+    assert record.getMessage() == "unhandled error processing MESSAGE_CREATE"
+
+
+async def test_role_event_handler_error_is_caught_by_on_dispatch(
+    fake, session, tmp_path, images, monkeypatch, caplog
+):
+    bot = make_bot(session, fake[1], tmp_path, images)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("role boom")
+
+    monkeypatch.setattr(bot.gm, "handle_event", boom)
+    with caplog.at_level(logging.ERROR, logger="green_oaks_bot"):
+        await bot.on_dispatch("GUILD_ROLE_UPDATE", {"guild_id": GUILD, "role": {"id": "r9"}})
+
+    (record,) = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert record.exc_info is not None
+    assert record.getMessage() == "unhandled error processing GUILD_ROLE_UPDATE"
+
+
 # Process-level startup behaviour
 
 
