@@ -8,15 +8,14 @@ from typing import Literal
 
 from green_oaks_bot.deck import Card, Deck, Rank, Suit, TextStyle
 from green_oaks_bot.rules import (
-    RUMOR,
-    GrumbleOption,
     Outcome,
     describe,
     resolve,
     upgrade,
 )
+from green_oaks_bot.ruleset import GrumbleOption, Ruleset, default_ruleset
 
-Tone = Literal["success", "failure", "rumor", "info", "error"]
+Tone = Literal["success", "failure", "special", "info", "error"]
 ImageMode = Literal["large", "small", "off"]
 PendingKind = Literal["grumble_redraw", "grumble_upgrade", "choose_trump"]
 
@@ -56,10 +55,11 @@ class Table:
     def __init__(self, deck: Deck, trump: Suit, rng: random.Random, *, prefix: str = "!",
                  aces_drawn: int = 0, pending: Pending | None = None,
                  last_outcome: Outcome | None = None, style: TextStyle = "long",
-                 images: ImageMode = "large") -> None:
+                 images: ImageMode = "large", ruleset: Ruleset | None = None) -> None:
         self.deck = deck
         self.trump = trump
         self.rng = rng
+        self.ruleset: Ruleset = ruleset if ruleset is not None else default_ruleset()
         self.prefix = prefix
         self.aces_drawn = aces_drawn
         self.pending = pending
@@ -68,8 +68,8 @@ class Table:
         self.images: ImageMode = images
 
     @classmethod
-    def new(cls, rng: random.Random, *, prefix: str = "!") -> Table:
-        table = cls(Deck.fresh(), Suit.CLUBS, rng, prefix=prefix)
+    def new(cls, rng: random.Random, *, prefix: str = "!", ruleset: Ruleset | None = None) -> Table:
+        table = cls(Deck.fresh(), Suit.CLUBS, rng, prefix=prefix, ruleset=ruleset)
         table._shuffle_and_turn_trump()
         return table
 
@@ -117,8 +117,8 @@ class Table:
 
     @staticmethod
     def _tone(outcome: Outcome) -> Tone:
-        if outcome.keyword == RUMOR:
-            return "rumor"
+        if outcome.special:
+            return "special"
         return "success" if outcome.success else "failure"
 
     def _apply(self, actor: Actor, outcome: Outcome) -> list[str]:
@@ -138,7 +138,9 @@ class Table:
             return [f"{actor.display_name} may `{p}grumble` to flip a replacement card."]
         if outcome.grumble is GrumbleOption.UPGRADE:
             self.pending = Pending(actor.user_id, "grumble_upgrade")
-            return [f"{actor.display_name} may `{p}grumble` to make it Success, Haughtiness 3."]
+            labels, points = self.ruleset.labels, self.ruleset.upgrade_points
+            return [(f"{actor.display_name} may `{p}grumble` to make it {labels.success}, "
+                     f"{labels.success_points} {points}.")]
         return []
 
     # ---- actions -------------------------------------------------------
@@ -147,9 +149,10 @@ class Table:
         if not self.deck.draw:
             return self._error("The draw pile is empty.")
         card = self._take()
-        outcome = resolve(card, self.trump)
+        outcome = resolve(card, self.trump, self.ruleset)
         prompts = self._apply(actor, outcome)
-        text = "\n".join([f"{actor.display_name} flips **{self._name(card)}**: {describe(outcome)}.",
+        text = "\n".join([(f"{actor.display_name} flips **{self._name(card)}**: "
+                           f"{describe(outcome, self.ruleset)}."),
                           *prompts])
         return self.finish(Reply(text, (card,), None, self._tone(outcome)))
 
@@ -165,7 +168,7 @@ class Table:
             return Reply("Not enough cards in the draw pile to flip two.",
                          tone="error", hints=(self.shuffle_hint,))
         c1, c2 = self._take(), self._take()
-        o1, o2 = resolve(c1, self.trump), resolve(c2, self.trump)
+        o1, o2 = resolve(c1, self.trump, self.ruleset), resolve(c2, self.trump, self.ruleset)
         better = o2.score > o1.score if keep_higher else o2.score < o1.score
         kept_index = 1 if better else 0
         kept = (o1, o2)[kept_index]
@@ -173,7 +176,7 @@ class Table:
         label = "advantage" if keep_higher else "disadvantage"
         text = "\n".join([
             f"{actor.display_name} flips with {label}: **{self._name(c1)}** and **{self._name(c2)}**.",
-            f"Kept **{self._name(kept.card)}**: {describe(kept)}.",
+            f"Kept **{self._name(kept.card)}**: {describe(kept, self.ruleset)}.",
             *prompts,
         ])
         return self.finish(Reply(text, (c1, c2), kept_index, self._tone(kept)))
@@ -186,19 +189,19 @@ class Table:
             return self._error("Only the player who flipped that card can grumble.")
         if pending.kind == "grumble_upgrade":
             assert self.last_outcome is not None
-            outcome = upgrade(self.last_outcome)
+            outcome = upgrade(self.last_outcome, self.ruleset)
             self.last_outcome = outcome
             self.pending = None
             text = (f"{actor.display_name} grumbles: **{self._name(outcome.card)}** "
-                    f"becomes {describe(outcome)}.")
+                    f"becomes {describe(outcome, self.ruleset)}.")
             return self.finish(Reply(text, (outcome.card,), None, "success"))
         if not self.deck.draw:
             return self._error("The draw pile is empty, so there is nothing to redraw.")
         card = self._take()
-        outcome = resolve(card, self.trump)
+        outcome = resolve(card, self.trump, self.ruleset)
         prompts = self._apply(actor, outcome)
         flip_line = (f"{actor.display_name} grumbles and flips **{self._name(card)}**: "
-                     f"{describe(outcome)}.")
+                     f"{describe(outcome, self.ruleset)}.")
         text = "\n".join([flip_line, *prompts])
         return self.finish(Reply(text, (card,), None, self._tone(outcome)))
 

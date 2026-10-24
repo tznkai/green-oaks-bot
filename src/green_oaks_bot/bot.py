@@ -121,7 +121,7 @@ class Bot:
                 await self.rest.send_message(channel_id, reply_to_embed(Reply(DM_TEXT), False), None)
             return
         try:
-            standalone = standalone_reply(cmd, self.prefix)
+            standalone = standalone_reply(cmd, self.prefix, self.store.ruleset)
             if standalone is not None:
                 # help and unknown commands never touch the store.
                 await self._send_reply(channel_id, standalone, None, reply_to)

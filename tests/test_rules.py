@@ -1,17 +1,11 @@
 import pytest
 
 from green_oaks_bot.deck import FULL_DECK, Card, Rank, Suit
-from green_oaks_bot.rules import (
-    OBITUARY,
-    RANT,
-    RUMOR,
-    WISE_WORDS,
-    GrumbleOption,
-    describe,
-    resolve,
-    upgrade,
-)
+from green_oaks_bot.rules import describe, resolve, upgrade
+from green_oaks_bot.ruleset import GrumbleOption, default_ruleset
 
+RULESET = default_ruleset()
+LABELS = RULESET.labels
 TRUMP = Suit.HEARTS
 OTHER = Suit.SPADES
 FACES = [Rank.JACK, Rank.QUEEN, Rank.KING]
@@ -26,57 +20,64 @@ def non_trump(rank):
     return Card(OTHER, rank)
 
 
+def res(card, trump_suit=TRUMP):
+    return resolve(card, trump_suit, RULESET)
+
+
 # AC2.1
-def test_trump_ace_is_success_rumor_with_trump_change():
-    o = resolve(trump(Rank.ACE), TRUMP)
+def test_trump_ace_is_success_with_keyword_and_trump_change():
+    o = res(trump(Rank.ACE))
     assert o.success is True
-    assert o.keyword == RUMOR
-    assert o.haughtiness == 5
-    assert o.bother == 0
+    assert o.keyword == RULESET.cell(True, "ace").keyword
+    assert o.success_points == 5
+    assert o.failure_points == 0
     assert o.changes_trump is True
+    assert o.special is True
     assert o.grumble is GrumbleOption.NONE
     assert o.trump is True
 
 
 # AC2.2
-def test_non_trump_ace_is_failure_obituary():
-    o = resolve(non_trump(Rank.ACE), TRUMP)
+def test_non_trump_ace_is_failure_with_keyword():
+    o = res(non_trump(Rank.ACE))
     assert o.success is False
-    assert o.keyword == OBITUARY
-    assert o.bother == 4
-    assert o.haughtiness == 0
+    assert o.keyword == RULESET.cell(False, "ace").keyword
+    assert o.failure_points == 4
+    assert o.success_points == 0
     assert o.grumble is GrumbleOption.NONE
     assert o.changes_trump is False
+    assert o.special is False
     assert o.trump is False
 
 
 # AC2.3
-def test_trump_two_is_success_wise_words():
-    o = resolve(trump(Rank.TWO), TRUMP)
+def test_trump_two_is_success_with_keyword():
+    o = res(trump(Rank.TWO))
     assert o.success is True
-    assert o.keyword == WISE_WORDS
-    assert o.haughtiness == 4
-    assert o.bother == 0
+    assert o.keyword == RULESET.cell(True, "two").keyword
+    assert o.success_points == 4
+    assert o.failure_points == 0
     assert o.changes_trump is False
+    assert o.special is False
 
 
 # AC2.4
-def test_non_trump_two_is_failure_rant():
-    o = resolve(non_trump(Rank.TWO), TRUMP)
+def test_non_trump_two_is_failure_with_keyword():
+    o = res(non_trump(Rank.TWO))
     assert o.success is False
-    assert o.keyword == RANT
-    assert o.bother == 3
+    assert o.keyword == RULESET.cell(False, "two").keyword
+    assert o.failure_points == 3
     assert o.grumble is GrumbleOption.NONE
     assert o.changes_trump is False
 
 
 # AC2.5
 @pytest.mark.parametrize("rank", FACES)
-def test_trump_face_is_success_haughtiness_two(rank):
-    o = resolve(trump(rank), TRUMP)
+def test_trump_face_is_success_worth_two(rank):
+    o = res(trump(rank))
     assert o.success is True
-    assert o.haughtiness == 2
-    assert o.bother == 0
+    assert o.success_points == 2
+    assert o.failure_points == 0
     assert o.keyword is None
     assert o.grumble is GrumbleOption.NONE
     assert o.changes_trump is False
@@ -84,39 +85,40 @@ def test_trump_face_is_success_haughtiness_two(rank):
 
 # AC2.6
 @pytest.mark.parametrize("rank", FACES)
-def test_non_trump_face_is_failure_bother_two_with_upgrade_grumble(rank):
-    o = resolve(non_trump(rank), TRUMP)
+def test_non_trump_face_is_failure_worth_two_with_upgrade_grumble(rank):
+    o = res(non_trump(rank))
     assert o.success is False
-    assert o.bother == 2
-    assert o.haughtiness == 0
+    assert o.failure_points == 2
+    assert o.success_points == 0
     assert o.keyword is None
     assert o.grumble is GrumbleOption.UPGRADE
 
 
 @pytest.mark.parametrize("rank", FACES)
-def test_upgrade_turns_non_trump_face_into_success_haughtiness_three(rank):
-    before = resolve(non_trump(rank), TRUMP)
-    after = upgrade(before)
+def test_upgrade_turns_non_trump_face_into_success_worth_the_upgrade_points(rank):
+    before = res(non_trump(rank))
+    after = upgrade(before, RULESET)
     assert after.success is True
-    assert after.haughtiness == 3
-    assert after.bother == 0
+    assert after.success_points == RULESET.upgrade_points == 3
+    assert after.failure_points == 0
     assert after.card == before.card
     assert after.grumble is GrumbleOption.NONE
     assert after.changes_trump is False
+    assert after.special is False
 
 
 def test_upgrade_rejects_outcome_without_upgrade_grumble():
     with pytest.raises(ValueError):
-        upgrade(resolve(trump(Rank.FIVE), TRUMP))
+        upgrade(res(trump(Rank.FIVE)), RULESET)
 
 
 # AC2.7
 @pytest.mark.parametrize("rank", PIPS)
-def test_trump_pip_is_success_haughtiness_two(rank):
-    o = resolve(trump(rank), TRUMP)
+def test_trump_pip_is_success_worth_two(rank):
+    o = res(trump(rank))
     assert o.success is True
-    assert o.haughtiness == 2
-    assert o.bother == 0
+    assert o.success_points == 2
+    assert o.failure_points == 0
     assert o.grumble is GrumbleOption.NONE
     assert o.changes_trump is False
 
@@ -124,17 +126,17 @@ def test_trump_pip_is_success_haughtiness_two(rank):
 @pytest.mark.parametrize("trump_suit", list(Suit))
 def test_only_trump_ace_changes_trump_for_every_card(trump_suit):
     for card in FULL_DECK:
-        o = resolve(card, trump_suit)
+        o = res(card, trump_suit)
         assert o.changes_trump == (card.suit is trump_suit and card.rank is Rank.ACE), card
 
 
 # AC2.8
 @pytest.mark.parametrize("rank", PIPS)
-def test_non_trump_pip_is_failure_bother_one_with_redraw_grumble(rank):
-    o = resolve(non_trump(rank), TRUMP)
+def test_non_trump_pip_is_failure_worth_one_with_redraw_grumble(rank):
+    o = res(non_trump(rank))
     assert o.success is False
-    assert o.bother == 1
-    assert o.haughtiness == 0
+    assert o.failure_points == 1
+    assert o.success_points == 0
     assert o.grumble is GrumbleOption.REDRAW
 
 
@@ -150,34 +152,34 @@ def test_representative_scores_are_ordered():
         non_trump(Rank.TWO),
         non_trump(Rank.ACE),
     ]
-    scores = [resolve(c, TRUMP).score for c in cases]
+    scores = [res(c).score for c in cases]
     assert scores == [5, 4, 2, 2, -1, -2, -3, -4]
 
 
 def test_every_success_scores_above_every_failure():
-    outcomes = [resolve(c, TRUMP) for c in FULL_DECK]
+    outcomes = [res(c) for c in FULL_DECK]
     successes = [o.score for o in outcomes if o.success]
     failures = [o.score for o in outcomes if not o.success]
     assert min(successes) > max(failures)
 
 
 @pytest.mark.parametrize("trump_suit", list(Suit))
-def test_score_equals_haughtiness_minus_bother_for_every_card(trump_suit):
+def test_score_equals_success_points_minus_failure_points_for_every_card(trump_suit):
     for card in FULL_DECK:
-        o = resolve(card, trump_suit)
-        assert o.score == o.haughtiness - o.bother
+        o = res(card, trump_suit)
+        assert o.score == o.success_points - o.failure_points
 
 
-def test_describe_trump_ace_mentions_success_rumor_and_haughtiness():
-    text = describe(resolve(trump(Rank.ACE), TRUMP))
+def test_describe_trump_ace_mentions_success_keyword_and_points():
+    text = describe(res(trump(Rank.ACE)), RULESET)
     assert text
-    assert "Success" in text
-    assert "Rumor!" in text
-    assert "Haughtiness 5" in text
+    assert LABELS.success in text
+    assert RULESET.cell(True, "ace").keyword in text
+    assert f"{LABELS.success_points} 5" in text
 
 
-def test_describe_non_trump_five_mentions_failure_and_bother():
-    text = describe(resolve(non_trump(Rank.FIVE), TRUMP))
+def test_describe_non_trump_five_mentions_failure_and_failure_points():
+    text = describe(res(non_trump(Rank.FIVE)), RULESET)
     assert text
-    assert "Failure" in text
-    assert "Bother 1" in text
+    assert LABELS.failure in text
+    assert f"{LABELS.failure_points} 1" in text

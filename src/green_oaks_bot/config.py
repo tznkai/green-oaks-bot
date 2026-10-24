@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from green_oaks_bot.ruleset import DEFAULT_RULES_FILE
+
 DEFAULT_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets" / "cards"
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
@@ -31,6 +33,7 @@ class Config:
     data_dir: Path
     assets_dir: Path
     log_level: str
+    rules_file: Path = DEFAULT_RULES_FILE
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -56,4 +59,5 @@ class Config:
             data_dir=Path(_opt(env, "DATA_DIR") or "data"),
             assets_dir=Path(_opt(env, "CARD_ASSETS_DIR") or DEFAULT_ASSETS_DIR),
             log_level=log_level,
+            rules_file=Path(_opt(env, "RULES_FILE") or DEFAULT_RULES_FILE),
         )

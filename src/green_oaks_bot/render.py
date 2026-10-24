@@ -19,7 +19,7 @@ DIM_ALPHA = 0.45     # opacity multiplier for the unkept card
 TONE_COLOURS: dict[str, int] = {
     "success": 0x2E7D32,
     "failure": 0xC62828,
-    "rumor": 0xF9A825,
+    "special": 0xF9A825,
     "info": 0x1565C0,
     "error": 0x616161,
 }

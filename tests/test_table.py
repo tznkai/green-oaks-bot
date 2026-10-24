@@ -4,8 +4,11 @@ import pytest
 
 from green_oaks_bot.deck import Card, Rank, Suit
 from green_oaks_bot.rules import describe, resolve
+from green_oaks_bot.ruleset import default_ruleset
 from green_oaks_bot.table import Pending, Table, new_table_notice
 from tests.helpers import ALICE, BOB, GM, make_table
+
+RULESET = default_ruleset()
 
 HINT = "GM: time to `!shuffle`"
 
@@ -67,14 +70,14 @@ def test_new_table_notice_names_trump_suit():
 # AC3.1
 @pytest.mark.parametrize(
     ("code", "tone"),
-    [("5H", "success"), ("5S", "failure"), ("AH", "rumor")],
+    [("5H", "success"), ("5S", "failure"), ("AH", "special")],
 )
 def test_flip_reply_has_card_outcome_and_tone(code, tone):
     t = make_table([code], trump="H")
     reply = t.flip(ALICE)
-    expected = resolve(card(code), Suit.HEARTS)
+    expected = resolve(card(code), Suit.HEARTS, RULESET)
     assert card(code).text("long") in reply.text
-    assert describe(expected) in reply.text
+    assert describe(expected, RULESET) in reply.text
     assert reply.cards == (card(code),)
     assert reply.kept_index is None
     assert reply.tone == tone
@@ -218,7 +221,7 @@ def test_grumble_on_face_card_upgrades_without_drawing():
     reply = t.grumble(ALICE)
     assert reply.tone == "success"
     assert t.last_outcome.success
-    assert t.last_outcome.haughtiness == 3
+    assert t.last_outcome.success_points == 3
     assert len(t.deck.draw) == draw_before
     assert t.pending is None
 
@@ -267,7 +270,7 @@ def test_grumble_after_non_trump_two_is_refused():
 def test_next_flip_by_anyone_clears_pending_grumble():
     t = make_table(["5S", "2C", "5D"], trump="H")
     t.flip(ALICE)
-    t.flip(BOB)  # Rant: no grumble
+    t.flip(BOB)  # a non-trump two: no grumble
     assert t.pending is None
     assert t.grumble(ALICE).tone == "error"
 

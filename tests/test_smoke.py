@@ -4,6 +4,7 @@ MODULES = [
     "green_oaks_bot",
     "green_oaks_bot.deck",
     "green_oaks_bot.rules",
+    "green_oaks_bot.ruleset",
     "green_oaks_bot.table",
     "green_oaks_bot.commands",
     "green_oaks_bot.render",

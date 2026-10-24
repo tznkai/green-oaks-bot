@@ -16,6 +16,7 @@ import pytest
 from green_oaks_bot import store as store_mod
 from green_oaks_bot.deck import Card, Rank, Suit
 from green_oaks_bot.rules import resolve
+from green_oaks_bot.ruleset import default_ruleset
 from green_oaks_bot.store import Store, table_from_dict, table_to_dict
 from green_oaks_bot.table import Pending, Table, new_table_notice
 from tests.helpers import ALICE, make_table
@@ -42,7 +43,7 @@ def test_save_and_load_round_trip_every_attribute():
     t = make_table(
         ["KC", "2H", "AS", "7D"], trump="S", discards=["7C", "AD"],
         aces_drawn=2, pending=Pending("42", "grumble_upgrade"),
-        last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES),
+        last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()),
         style="emoji", images="small",
     )
     rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!")
@@ -55,7 +56,7 @@ def test_round_trip_through_file_and_new_store(tmp_path: Path):
     t = make_table(
         ["KC", "2H", "AS"], trump="S", discards=["7C"], aces_drawn=1,
         pending=Pending("42", "grumble_redraw"),
-        last_outcome=resolve(Card(Suit.HEARTS, Rank.TWO), Suit.SPADES),
+        last_outcome=resolve(Card(Suit.HEARTS, Rank.TWO), Suit.SPADES, default_ruleset()),
         style="short", images="off",
     )
     Store(tmp_path).save(GUILD, CHANNEL, t)
@@ -513,7 +514,7 @@ def test_second_corruption_keeps_first_corrupt_copy(tmp_path: Path):
 def dict_with_outcome() -> dict:
     return table_to_dict(make_table(
         ["KC", "2H"], trump="S", pending=Pending("42", "grumble_upgrade"),
-        last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES),
+        last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()),
     ))
 
 
@@ -544,9 +545,10 @@ BAD_FIELDS = [
     ("outcome_trump_int", _set("last_outcome", "trump"), 1),
     ("outcome_success_string", _set("last_outcome", "success"), "yes"),
     ("outcome_changes_trump_none", _set("last_outcome", "changes_trump"), None),
-    ("outcome_haughtiness_true", _set("last_outcome", "haughtiness"), True),
-    ("outcome_bother_float", _set("last_outcome", "bother"), 1.5),
+    ("outcome_success_points_true", _set("last_outcome", "success_points"), True),
+    ("outcome_failure_points_float", _set("last_outcome", "failure_points"), 1.5),
     ("outcome_keyword_int", _set("last_outcome", "keyword"), 5),
+    ("outcome_special_int", _set("last_outcome", "special"), 1),
     ("outcome_not_an_object", _set("last_outcome"), []),
     ("style_int", _set("style"), 5),
     ("images_int", _set("images"), 1),
@@ -573,7 +575,7 @@ def test_loose_field_values_are_treated_as_corrupt(tmp_path: Path, apply, value)
 # AC9.4 (valid values still load: the stricter checks must not reject real state)
 def test_strict_validation_accepts_good_state(tmp_path: Path):
     t = make_table(["KC", "2H"], trump="S", pending=Pending("42", "grumble_upgrade"),
-                   last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES), aces_drawn=4)
+                   last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES, default_ruleset()), aces_drawn=4)
     rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!")
     assert state(rebuilt) == state(t)
 
@@ -754,3 +756,29 @@ async def test_cancel_during_non_creating_load_keeps_lock_until_thread_finishes(
     assert events == ["start", "end"]
     assert not store.lock(GUILD, CHANNEL).locked()
     assert not store.path(GUILD, CHANNEL).exists()
+
+
+# FORMAT_VERSION 2: a v1 state file is set aside as corrupt, whether its body is v1-shaped or not
+@pytest.mark.parametrize("v1_shaped_body", [True, False], ids=["v1_field_names", "v2_body_stamped_v1"])
+def test_v1_state_file_is_set_aside_as_corrupt(tmp_path: Path, v1_shaped_body: bool):
+    last = resolve(Card(Suit.HEARTS, Rank.TWO), Suit.SPADES, default_ruleset())
+    old = table_to_dict(make_table(["KC"], trump="S", seed=3, last_outcome=last))
+    if v1_shaped_body:
+        # v1 named its two points fields after the points terms and had no `special` field.
+        labels = default_ruleset().labels
+        outcome = old["last_outcome"]
+        outcome[labels.success_points.lower()] = outcome.pop("success_points")
+        outcome[labels.failure_points.lower()] = outcome.pop("failure_points")
+        del outcome["special"]
+    old["version"] = 1
+    path = Store(tmp_path).path(GUILD, CHANNEL)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(old), "utf-8")
+
+    loaded, notice = Store(tmp_path).load(GUILD, CHANNEL)
+
+    assert notice is not None and notice.startswith(store_mod.UNREADABLE_RESET)
+    assert loaded.last_outcome is None
+    assert len(unique_codes(loaded)) == 40
+    assert json.loads(path.with_name(path.name + ".corrupt").read_text("utf-8"))["version"] == 1
+    assert json.loads(path.read_text("utf-8"))["version"] == store_mod.FORMAT_VERSION == 2

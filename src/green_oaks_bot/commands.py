@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from green_oaks_bot.deck import Suit
+from green_oaks_bot.ruleset import Ruleset, default_ruleset
 from green_oaks_bot.table import IMAGE_MODES, STYLES, Actor, Reply, Table
 
 ALIASES = {
@@ -52,13 +53,16 @@ def parse_suit(token: str) -> Suit | None:
     return _SUIT_WORDS.get(token.strip().replace("\ufe0f", "").lower())
 
 
-def help_text(prefix: str) -> str:
+def help_text(prefix: str, ruleset: Ruleset | None = None) -> str:
     p = prefix
+    rules = ruleset if ruleset is not None else default_ruleset()
+    labels, upgrade_points = rules.labels, rules.upgrade_points
     return "\n".join([
         "**Green Oaks Bot commands**",
         f"`{p}flip` (`{p}f`): flip a card and resolve it against trump",
         f"`{p}adv` / `{p}dis`: flip two, keep the better / worse result",
-        f"`{p}grumble`: after a non-trump 3–7 flip a replacement; after a non-trump face card make it Success, Haughtiness 3",
+        (f"`{p}grumble`: after a non-trump 3–7 flip a replacement; after a non-trump face card make it "
+         f"{labels.success}, {labels.success_points} {upgrade_points}"),
         f"`{p}trump`: show trump. `{p}trump <suit>`: set trump (GM, or the player who flipped the trump Ace)",
         f"`{p}shuffle`: GM only. Shuffle all 40 cards and turn up a new trump",
         f"`{p}status`: trump, pile counts, Aces drawn",
@@ -81,10 +85,10 @@ def creates_deck(cmd: Command, is_gm: bool) -> bool:
     return cmd.name in _DECK_STARTERS or (cmd.name == "shuffle" and is_gm)
 
 
-def standalone_reply(cmd: Command, prefix: str) -> Reply | None:
+def standalone_reply(cmd: Command, prefix: str, ruleset: Ruleset | None = None) -> Reply | None:
     """The reply for `help` and unknown commands, which need no table. None for table commands."""
     if cmd.name == "help":
-        return Reply(help_text(prefix))
+        return Reply(help_text(prefix, ruleset))
     if cmd.name in ALIASES.values():
         return None
     return Reply(f"Unknown command `{prefix}{cmd.name}`. Try `{prefix}help`.", tone="error")
@@ -148,6 +152,6 @@ def _dispatch(cmd: Command, table: Table, actor: Actor) -> Reply:
                 return Reply(f"Usage: `{p}images {'|'.join(IMAGE_MODES)}`", tone="error")
             return table.set_images(actor, value)
         case "help":
-            return Reply(help_text(p))
+            return Reply(help_text(p, table.ruleset))
         case _:
             return Reply(f"Unknown command `{p}{cmd.name}`. Try `{p}help`.", tone="error")

@@ -107,3 +107,11 @@ def test_log_level_is_normalised_to_upper():
     cfg = Config.from_env({**BASE, "LOG_LEVEL": "debug"})
 
     assert cfg.log_level == "DEBUG"
+
+
+def test_rules_file_defaults_to_the_packaged_file_and_can_be_overridden():
+    from green_oaks_bot.ruleset import DEFAULT_RULES_FILE
+
+    base = {"FLUXER_TOKEN": "x.y", "FLUXER_INSTANCE_URL": "https://fluxer.test"}
+    assert Config.from_env(base).rules_file == DEFAULT_RULES_FILE
+    assert Config.from_env({**base, "RULES_FILE": "/srv/rules.toml"}).rules_file == Path("/srv/rules.toml")

@@ -15,6 +15,7 @@ import pytest
 from aiohttp import web
 
 from green_oaks_bot.bot import READY_LINE
+from green_oaks_bot.ruleset import DEFAULT_RULES_FILE
 from tests.fakes import (
     GATEWAY_STATE,
     FakeFluxerState,
@@ -57,6 +58,46 @@ async def test_empty_assets_dir_fails_cleanly(tmp_path: Path):
     assert code == 1
     assert "startup failed" in out
     assert "missing card images" in out
+    assert "Traceback" not in err
+
+
+async def test_missing_rules_file_fails_cleanly(tmp_path: Path):
+    code, out, err = await run_module({
+        "PATH": os.environ["PATH"],
+        "FLUXER_TOKEN": "x.y",
+        "FLUXER_API_URL": "http://127.0.0.1:9/api",
+        "RULES_FILE": str(tmp_path / "absent.toml"),
+        "DATA_DIR": str(tmp_path / "data"),
+    })
+
+    assert code == 1
+    assert "startup failed" in out
+    assert "cannot read rules file" in out
+    assert "Traceback" not in err
+
+
+async def test_rules_file_missing_a_category_fails_cleanly(tmp_path: Path):
+    # Drop the last category section from the packaged file; a broken file must be refused by name.
+    text = DEFAULT_RULES_FILE.read_text("utf-8")
+    before, marker, rest = text.partition("[non_trump.pip]")
+    assert marker
+    _, sep, tail = rest.partition("\n[")
+    broken = before + ("[" + tail if sep else "")
+    assert "[non_trump.pip]" not in broken
+    rules = tmp_path / "rules.toml"
+    rules.write_text(broken, "utf-8")
+
+    code, out, err = await run_module({
+        "PATH": os.environ["PATH"],
+        "FLUXER_TOKEN": "x.y",
+        "FLUXER_API_URL": "http://127.0.0.1:9/api",
+        "RULES_FILE": str(rules),
+        "DATA_DIR": str(tmp_path / "data"),
+    })
+
+    assert code == 1
+    assert "startup failed" in out
+    assert "missing [non_trump.pip] section" in out
     assert "Traceback" not in err
 
 

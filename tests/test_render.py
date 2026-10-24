@@ -185,7 +185,7 @@ def test_pair_small_divides_both_dimensions_by_ten(images: CardImages) -> None:
 
 # --- AC8.4: embed colour per tone ------------------------------------------
 
-TONES: tuple[Tone, ...] = ("success", "failure", "rumor", "info", "error")
+TONES: tuple[Tone, ...] = ("success", "failure", "special", "info", "error")
 
 
 @pytest.mark.parametrize("tone", TONES)
