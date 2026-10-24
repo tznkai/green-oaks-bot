@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 FATAL_CLOSE_CODES = {4004, 4010, 4011, 4012}
 SESSION_RESET_CLOSE_CODES = {4003, 4007}
 HELLO_TIMEOUT = 30.0
+DRAIN_TIMEOUT = 5.0   # seconds a running dispatch handler gets to finish during stop()
 
 
 class FatalGatewayError(Exception):
@@ -32,6 +33,7 @@ class Gateway:
                  backoff_base: float = 1.0, backoff_max: float = 60.0,
                  invalid_session_delay: tuple[float, float] = (1.0, 5.0),
                  reconnect_delay: tuple[float, float] = (1.0, 5.0),
+                 drain_timeout: float = DRAIN_TIMEOUT,
                  sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
         self.session = session
         # keep the path exactly as given (reverse proxies may route /gateway exactly)
@@ -44,6 +46,7 @@ class Gateway:
         self.backoff_max = backoff_max
         self.invalid_session_delay = invalid_session_delay
         self.reconnect_delay = reconnect_delay
+        self.drain_timeout = drain_timeout
         self._sleep = sleep
         self._established = False
         self._last_close_code: int | None = None
@@ -79,11 +82,23 @@ class Gateway:
             await self._sleep(delay)
 
     async def stop(self) -> None:
+        """Close the socket, let running dispatch handlers finish, then cancel stragglers.
+
+        A handler that is cancelled after its Store transaction committed would save a
+        card the user never hears about, so handlers get `drain_timeout` seconds first.
+        """
         self._stopping = True
         if self._ws is not None and not self._ws.closed:
             await self._ws.close()
-        for task in list(self._tasks):
-            task.cancel()
+        if not self._tasks:
+            return
+        _, pending = await asyncio.wait(self._tasks, timeout=self.drain_timeout)
+        if pending:
+            log.warning("cancelling %d dispatch handler(s) still running after %.1fs",
+                        len(pending), self.drain_timeout)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def _connect_once(self) -> None:
         code: int | None = None
@@ -187,7 +202,9 @@ class Gateway:
                         self.on_ready(self.user_id)
             elif t == "RESUMED":
                 self._established = True
-            if t:
+            if t and self._stopping:
+                log.info("not starting %s: shutting down", t)
+            elif t:
                 task = asyncio.create_task(self.on_dispatch(t, d))
                 self._tasks.add(task)
                 task.add_done_callback(self._dispatch_done)
@@ -200,6 +217,8 @@ class Gateway:
             log.info("gateway requested reconnect")
             await ws.close(code=4000)
         elif op == 9:
+            # Fluxer always sends d=false here (docs.fluxer.app), so the resumable flag is
+            # ignored: an invalid session is always re-identified from scratch.
             log.info("invalid session; identifying again")
             self.session_id = None
             self.seq = None

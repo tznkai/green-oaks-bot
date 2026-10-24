@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import itertools
+import logging
 import random
 import socket
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 import aiohttp
 import pytest
 
+from green_oaks_bot.fluxer import gateway as gateway_mod
 from green_oaks_bot.fluxer.gateway import FatalGatewayError, Gateway
 from tests.fakes import GATEWAY_STATE, expect, hold, make_gateway_app, send
 
@@ -454,3 +456,125 @@ async def test_reconnect_after_established_session_uses_reconnect_delay(aiohttp_
     assert state.errors == []
     assert len(delays) == 1
     assert 0.01 <= delays[0] <= 0.02
+
+
+# --- shutdown, timeouts and handler errors -------------------------------------------
+
+async def test_stop_alone_ends_run_without_cancelling_it(aiohttp_server, session):
+    async def script(ws, i, state):
+        await send(ws, 10, HELLO_30)
+        await expect(ws, 2)
+        await hold(ws)
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    gw = make_gateway(session, server, Events())
+    task = asyncio.create_task(gw.run())
+    await until(lambda: len(frames(state, 0)) >= 1, state)
+
+    await asyncio.wait_for(gw.stop(), TIMEOUT)
+    await asyncio.wait_for(task, TIMEOUT)  # no task.cancel(): run() must return on its own
+    assert not task.cancelled()
+    assert state.close_codes[0] is not None
+
+
+async def test_stop_lets_running_handler_finish(aiohttp_server, session):
+    started = asyncio.Event()
+    finished: list[str] = []
+
+    async def handler(t: str, d: dict[str, Any]) -> None:
+        started.set()
+        await asyncio.sleep(0.2)
+        finished.append(t)
+
+    async def script(ws, i, state):
+        await send(ws, 10, HELLO_30)
+        await expect(ws, 2)
+        await send(ws, 0, {}, t="MESSAGE_CREATE", s=1)
+        await hold(ws)
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    gw = Gateway(session, ws_url(server), "tok", handler,
+                 **{**FAST, "rng": random.Random(0), "drain_timeout": TIMEOUT})
+    task = asyncio.create_task(gw.run())
+    await asyncio.wait_for(started.wait(), TIMEOUT)
+
+    await asyncio.wait_for(gw.stop(), TIMEOUT)
+    assert finished == ["MESSAGE_CREATE"]  # stop() returned only after the handler completed
+    await asyncio.wait_for(task, TIMEOUT)
+    assert state.errors == []
+
+
+async def test_handler_exceeding_drain_timeout_is_cancelled(aiohttp_server, session):
+    started = asyncio.Event()
+    outcome: list[str] = []
+
+    async def handler(t: str, d: dict[str, Any]) -> None:
+        started.set()
+        try:
+            await asyncio.sleep(30)
+            outcome.append("finished")
+        except asyncio.CancelledError:
+            outcome.append("cancelled")
+            raise
+
+    async def script(ws, i, state):
+        await send(ws, 10, HELLO_30)
+        await expect(ws, 2)
+        await send(ws, 0, {}, t="MESSAGE_CREATE", s=1)
+        await hold(ws)
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    gw = Gateway(session, ws_url(server), "tok", handler,
+                 **{**FAST, "rng": random.Random(0), "drain_timeout": 0.2})
+    task = asyncio.create_task(gw.run())
+    await asyncio.wait_for(started.wait(), TIMEOUT)
+
+    loop = asyncio.get_running_loop()
+    began = loop.time()
+    await asyncio.wait_for(gw.stop(), TIMEOUT)
+    assert loop.time() - began < TIMEOUT
+    assert outcome == ["cancelled"]
+    await asyncio.wait_for(task, TIMEOUT)
+    assert state.errors == []
+
+
+async def test_hello_timeout_reconnects(aiohttp_server, session, monkeypatch):
+    monkeypatch.setattr(gateway_mod, "HELLO_TIMEOUT", 0.2)
+
+    async def script(ws, i, state):
+        await hold(ws)  # never sends Hello
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    gw = make_gateway(session, server, Events())
+    async with running(gw):
+        await until(lambda: len(state.connections) >= 2, state)
+
+    assert all(frames(state, i) == [] for i in range(2))  # nothing identified without Hello
+
+
+async def test_dispatch_handler_error_is_logged_with_traceback(aiohttp_server, session, caplog):
+    async def handler(t: str, d: dict[str, Any]) -> None:
+        raise RuntimeError("handler boom")
+
+    async def script(ws, i, state):
+        await send(ws, 10, HELLO_30)
+        await expect(ws, 2)
+        await send(ws, 0, {}, t="MESSAGE_CREATE", s=1)
+        await hold(ws)
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    gw = Gateway(session, ws_url(server), "tok", handler, **{**FAST, "rng": random.Random(0)})
+    with caplog.at_level(logging.ERROR, logger="green_oaks_bot.fluxer.gateway"):
+        async with running(gw):
+            await until(lambda: any(r.levelno == logging.ERROR for r in caplog.records), state)
+
+    (record,) = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert record.getMessage() == "dispatch handler failed"
+    assert isinstance(record.exc_info[1], RuntimeError)
+    assert str(record.exc_info[1]) == "handler boom"
+
