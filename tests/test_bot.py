@@ -63,7 +63,7 @@ def make_bot(session, api, tmp_path: Path, images: CardImages) -> Bot:
     )
 
 
-def event(content: str, *, id: str = "m1", author_id: str = "1", name: str = "Alice",
+def event(content: str, *, id: str = "40001", author_id: str = "1", name: str = "Alice",
           roles: list[str] | None = None, guild: str | None = GUILD, channel: str = CHANNEL,
           bot: bool = False) -> dict[str, Any]:
     d: dict[str, Any] = {
@@ -99,7 +99,7 @@ async def test_flip_sends_multipart_reply_with_card_image(fake, session, tmp_pat
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
 
-    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="m1"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40001"))
 
     (sent,) = messages(state)
     assert sent.content_type == "multipart/form-data"
@@ -107,7 +107,7 @@ async def test_flip_sends_multipart_reply_with_card_image(fake, session, tmp_pat
     assert "Alice flips" in embed["description"]
     assert "New deck for this channel" in embed["description"]  # first command in the channel
     assert embed["image"] == {"url": "attachment://card.png"}
-    assert sent.payload["message_reference"] == {"message_id": "m1"}
+    assert sent.payload["message_reference"] == {"message_id": "40001"}
     ((filename, data),) = sent.files
     assert filename == "card.png"
     assert png_size(data) == (500, 726)
@@ -117,8 +117,8 @@ async def test_images_off_sends_json_without_attachment(fake, session, tmp_path,
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
 
-    await bot.on_dispatch("MESSAGE_CREATE", event("!images off", id="m1"))
-    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="m2"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!images off", id="40001"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
 
     flip = messages(state)[-1]
     assert flip.content_type == "application/json"
@@ -130,8 +130,8 @@ async def test_images_small_sends_half_size_png(fake, session, tmp_path, images)
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
 
-    await bot.on_dispatch("MESSAGE_CREATE", event("!images small", id="m1"))
-    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="m2"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!images small", id="40001"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
 
     ((_, data),) = messages(state)[-1].files
     assert png_size(data) == (50, 72)
@@ -265,7 +265,7 @@ async def test_unexpected_error_is_logged_and_bot_keeps_running(
 
     monkeypatch.setattr(bot_mod, "execute", boom)
     with caplog.at_level(logging.ERROR, logger="green_oaks_bot"):
-        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="m1"))
+        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40001"))
 
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert errors and errors[0].exc_info is not None
@@ -273,7 +273,7 @@ async def test_unexpected_error_is_logged_and_bot_keeps_running(
     assert "Something went wrong" in failure.payload["embeds"][0]["description"]
 
     monkeypatch.undo()
-    await bot.on_dispatch("MESSAGE_CREATE", event("!status", id="m2"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!status", id="40002"))
     assert "Trump:" in messages(state)[-1].payload["embeds"][0]["description"]
 
 
@@ -338,3 +338,55 @@ def test_unreachable_instance_fails_cleanly(tmp_path):
     assert "startup failed" in result.stdout
     assert "Traceback" not in result.stderr
     assert not (tmp_path / "data").exists()
+
+
+# Event ids are interpolated into REST paths: malformed ids drop the event (nothing sent)
+
+
+@pytest.mark.parametrize("bad_channel", ["../x", "1?x", "1#x", "12a", ""])
+async def test_malformed_channel_id_sends_nothing(fake, session, tmp_path, images, bad_channel):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", channel=bad_channel))
+
+    assert state.requests == []
+
+
+async def test_malformed_dm_channel_id_sends_nothing(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", guild=None, channel="../x"))
+
+    assert state.requests == []
+
+
+async def test_malformed_guild_id_sends_nothing_even_for_gm_check(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!shuffle", guild="100/../../x"))
+
+    assert state.requests == []
+
+
+async def test_malformed_author_id_sends_nothing(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!shuffle", author_id="2?x"))
+
+    assert state.requests == []
+
+
+async def test_malformed_message_id_drops_only_the_reply_reference(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!status", id="../4"))
+
+    (sent,) = messages(state)
+    assert sent.path == MESSAGES
+    assert "message_reference" not in sent.payload
+    assert "Trump:" in sent.payload["embeds"][0]["description"]

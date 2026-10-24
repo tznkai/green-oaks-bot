@@ -7,20 +7,19 @@ import json
 import logging
 import os
 import random
-import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar
 
 from green_oaks_bot.deck import Card, Deck, Suit
+from green_oaks_bot.ids import require_snowflake
 from green_oaks_bot.rules import GrumbleOption, Outcome
 from green_oaks_bot.table import Pending, Table, new_table_notice
 
 log = logging.getLogger(__name__)
 
 FORMAT_VERSION = 1
-_SNOWFLAKE = re.compile(r"[0-9]{1,25}")  # fullmatch: "$" would accept a trailing newline
 _PENDING_KINDS = ("grumble_redraw", "grumble_upgrade", "choose_trump")
 _STYLES = ("emoji", "short", "long")
 _IMAGE_MODES = ("large", "small", "off")
@@ -195,9 +194,8 @@ class Store:
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     def path(self, guild_id: str, channel_id: str) -> Path:
-        for value in (guild_id, channel_id):
-            if not _SNOWFLAKE.fullmatch(value):
-                raise ValueError(f"not a snowflake id: {value!r}")
+        require_snowflake(guild_id)
+        require_snowflake(channel_id)
         return self.root / "guilds" / guild_id / f"{channel_id}.json"
 
     def lock(self, guild_id: str, channel_id: str) -> asyncio.Lock:

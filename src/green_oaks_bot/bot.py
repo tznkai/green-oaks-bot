@@ -9,6 +9,7 @@ from typing import Any
 from green_oaks_bot.commands import Command, execute, parse
 from green_oaks_bot.fluxer.rest import FluxerREST, reply_to_embed
 from green_oaks_bot.fluxer.roles import GMResolver
+from green_oaks_bot.ids import is_snowflake
 from green_oaks_bot.render import CardImages
 from green_oaks_bot.store import Store
 from green_oaks_bot.table import Actor, Reply
@@ -63,26 +64,37 @@ class Bot:
         author = d.get("author") or {}
         if author.get("bot") or (self.user_id is not None and str(author.get("id")) == self.user_id):
             return
+        # Ids below are interpolated into REST paths: drop the whole event unless they are snowflakes.
+        channel_id = str(d["channel_id"])
+        author_id = str(author.get("id"))
+        guild_id = str(d["guild_id"]) if d.get("guild_id") else None
+        if not is_snowflake(channel_id) or not is_snowflake(author_id) or \
+                (guild_id is not None and not is_snowflake(guild_id)):
+            log.warning("dropping message with malformed ids: channel %r, guild %r, author %r",
+                        channel_id, guild_id, author_id)
+            return
         cmd = parse(d.get("content") or "", self.prefix)
         if cmd is None:
             return
-        channel_id = str(d["channel_id"])
-        guild_id = d.get("guild_id")
+        # Only the reply reference is optional: a malformed message id just loses the reference.
+        reply_to = str(d["id"]) if d.get("id") is not None else None
+        if reply_to is not None and not is_snowflake(reply_to):
+            log.warning("ignoring malformed message id %r for reply reference", reply_to)
+            reply_to = None
         if not guild_id:
             if channel_id not in self._dm_notified:
                 self._dm_notified.add(channel_id)
                 await self.rest.send_message(channel_id, reply_to_embed(Reply(DM_TEXT), False), None)
             return
-        guild_id = str(guild_id)
         try:
-            user_id = str(author["id"])
+            user_id = author_id
             is_gm = await self.gm.is_gm(guild_id, user_id, d.get("member")) if _needs_gm_check(cmd) else False
             actor = Actor(user_id, _display_name(d), is_gm)
             reply, mode = await self.store.transact(
                 guild_id, channel_id, lambda table, notice: (execute(cmd, table, actor, notice), table.images))
             png = await asyncio.to_thread(self.images.render, reply.cards, reply.kept_index, mode)
             await self.rest.send_message(channel_id, reply_to_embed(reply, png is not None), png,
-                                         reply_to=d.get("id"))
+                                         reply_to=reply_to)
         except Exception:
             log.exception("command %r failed in guild %s channel %s", cmd.name, guild_id, channel_id)
             try:

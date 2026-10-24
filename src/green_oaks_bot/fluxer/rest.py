@@ -11,6 +11,7 @@ from typing import Any
 import aiohttp
 
 from green_oaks_bot.config import Config
+from green_oaks_bot.ids import require_snowflake
 from green_oaks_bot.render import embed_colour
 from green_oaks_bot.table import Reply
 
@@ -128,8 +129,9 @@ class FluxerREST:
     ) -> Any:
         payload: dict[str, Any] = {"embeds": [embed]}
         if reply_to:
-            payload["message_reference"] = {"message_id": reply_to}
-        path = f"/channels/{channel_id}/messages"
+            # the reference lives in the JSON body only, never in the URL
+            payload["message_reference"] = {"message_id": require_snowflake(reply_to)}
+        path = f"/channels/{require_snowflake(channel_id)}/messages"
         if image is None:
             return await self.request("POST", path, json_body=payload)
 
@@ -142,10 +144,11 @@ class FluxerREST:
         return await self.request("POST", path, form=form)
 
     async def get_roles(self, guild_id: str) -> list[dict[str, Any]]:
-        return await self.request("GET", f"/guilds/{guild_id}/roles")
+        return await self.request("GET", f"/guilds/{require_snowflake(guild_id)}/roles")
 
     async def get_member(self, guild_id: str, user_id: str) -> dict[str, Any]:
-        return await self.request("GET", f"/guilds/{guild_id}/members/{user_id}")
+        path = f"/guilds/{require_snowflake(guild_id)}/members/{require_snowflake(user_id)}"
+        return await self.request("GET", path)
 
 
 async def resolve_endpoints(session: aiohttp.ClientSession, config: Config) -> tuple[str, str]:

@@ -147,6 +147,12 @@ def make_rest_app(state: FakeFluxerState) -> web.Application:
     app.router.add_post("/api/v1/channels/{cid}/messages", create_message)
     app.router.add_get("/api/v1/guilds/{gid}/roles", roles)
     app.router.add_get("/api/v1/guilds/{gid}/members/{uid}", member)
+
+    async def unmatched(request: web.Request) -> web.Response:
+        # recorded like any other call, so a request to a path nobody expects still shows up
+        return _send(state, request, 404, {"code": "NOT_FOUND", "message": "no such route"})
+
+    app.router.add_route("*", "/{tail:.*}", unmatched)
     return app
 
 

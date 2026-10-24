@@ -19,7 +19,7 @@ from tests.fakes import FakeFluxerState, Override, make_rest_app
 
 TOKEN = "test.token"
 PNG = b"\x89PNG\r\n\x1a\n-card-bytes"
-MESSAGES = "/api/v1/channels/c1/messages"
+MESSAGES = "/api/v1/channels/3001/messages"
 
 
 @pytest.fixture
@@ -106,13 +106,13 @@ async def test_trailing_slash_on_api_url_is_tolerated(fake, session):
 
 async def test_every_rest_call_carries_bot_authorization(fake, session):
     state, base = fake
-    state.roles["g1"] = [{"id": "r1", "name": "GM"}]
-    state.members[("g1", "u1")] = {"roles": ["r1"], "nick": None}
+    state.roles["1001"] = [{"id": "r1", "name": "GM"}]
+    state.members[("1001", "2001")] = {"roles": ["r1"], "nick": None}
     rest = make_rest(session, base)
     await rest.get_gateway_url()
-    await rest.get_roles("g1")
-    await rest.get_member("g1", "u1")
-    await rest.send_message("c1", reply_to_embed(Reply("hi"), has_image=False), None)
+    await rest.get_roles("1001")
+    await rest.get_member("1001", "2001")
+    await rest.send_message("3001", reply_to_embed(Reply("hi"), has_image=False), None)
     assert len(state.requests) == 4
     assert {r.authorization for r in state.requests} == {f"Bot {TOKEN}"}
 
@@ -123,18 +123,18 @@ async def test_every_rest_call_carries_bot_authorization(fake, session):
 async def test_send_message_with_image_is_multipart_with_attachment_reference(fake, session):
     state, base = fake
     embed = reply_to_embed(Reply("hi"), has_image=True)
-    await make_rest(session, base).send_message("c1", embed, PNG, reply_to="m0")
+    await make_rest(session, base).send_message("3001", embed, PNG, reply_to="40000")
     [sent] = state.requests_to(MESSAGES)
     assert sent.content_type == "multipart/form-data"
     assert sent.payload["embeds"][0]["image"]["url"] == "attachment://card.png"
-    assert sent.payload["message_reference"] == {"message_id": "m0"}
+    assert sent.payload["message_reference"] == {"message_id": "40000"}
     assert sent.files == [("card.png", PNG)]
 
 
 async def test_send_message_without_image_is_json_with_no_image_key(fake, session):
     state, base = fake
     embed = reply_to_embed(Reply("hi"), has_image=False)
-    await make_rest(session, base).send_message("c1", embed, None)
+    await make_rest(session, base).send_message("3001", embed, None)
     [sent] = state.requests_to(MESSAGES)
     assert sent.content_type == "application/json"
     assert "image" not in sent.payload["embeds"][0]
@@ -172,7 +172,7 @@ async def test_429_is_retried_after_retry_after_with_intact_multipart(fake, sess
     state.rate_limit_next = 2
     sleeps: list[float] = []
     embed = reply_to_embed(Reply("hi"), has_image=True)
-    await make_rest(session, base, sleeps=sleeps).send_message("c1", embed, PNG)
+    await make_rest(session, base, sleeps=sleeps).send_message("3001", embed, PNG)
     assert sleeps == [0.25, 0.25]
     attempts = state.requests_to(MESSAGES)
     assert [r.status for r in attempts] == [429, 429, 200]
@@ -193,7 +193,7 @@ async def test_form_factory_is_called_once_per_attempt(fake, session):
         return fd
 
     rest = make_rest(session, base)
-    await rest.request("POST", "/channels/c1/messages", form=form)
+    await rest.request("POST", "/channels/3001/messages", form=form)
     assert built == [0, 1, 2]
     assert [r.status for r in state.requests_to(MESSAGES)] == [429, 429, 200]
     assert state.requests_to(MESSAGES)[-1].files == [("card.png", PNG)]
@@ -205,7 +205,7 @@ async def test_429_after_max_retries_raises_fluxer_http_error(fake, session):
     sleeps: list[float] = []
     embed = reply_to_embed(Reply("hi"), has_image=False)
     with pytest.raises(FluxerHTTPError) as caught:
-        await make_rest(session, base, sleeps=sleeps, max_retries=1).send_message("c1", embed, None)
+        await make_rest(session, base, sleeps=sleeps, max_retries=1).send_message("3001", embed, None)
     assert caught.value.status == 429
     assert caught.value.code == "RATE_LIMITED"
     assert sleeps == [0.25]
@@ -220,7 +220,7 @@ async def test_429_without_json_body_falls_back_to_retry_after_header(fake, sess
     sleeps: list[float] = []
     embed = reply_to_embed(Reply("hi"), has_image=False)
     with pytest.raises(FluxerHTTPError) as caught:
-        await make_rest(session, base, sleeps=sleeps, max_retries=1).send_message("c1", embed, None)
+        await make_rest(session, base, sleeps=sleeps, max_retries=1).send_message("3001", embed, None)
     assert caught.value.status == 429
     assert sleeps == [2.0]
 
@@ -230,11 +230,11 @@ async def test_429_without_json_body_falls_back_to_retry_after_header(fake, sess
 
 async def test_403_raises_with_status_and_code(fake, session):
     state, base = fake
-    state.overrides["GET /api/v1/guilds/g1/roles"] = Override(
+    state.overrides["GET /api/v1/guilds/1001/roles"] = Override(
         403, b'{"code":"MISSING_PERMISSIONS","message":"Missing permissions"}'
     )
     with pytest.raises(FluxerHTTPError) as caught:
-        await make_rest(session, base).get_roles("g1")
+        await make_rest(session, base).get_roles("1001")
     assert caught.value.status == 403
     assert caught.value.code == "MISSING_PERMISSIONS"
     assert caught.value.message == "Missing permissions"
@@ -242,18 +242,18 @@ async def test_403_raises_with_status_and_code(fake, session):
 
 async def test_500_with_empty_body_raises_with_no_code(fake, session):
     state, base = fake
-    state.overrides["GET /api/v1/guilds/g1/roles"] = Override(500, b"", content_type="text/plain")
+    state.overrides["GET /api/v1/guilds/1001/roles"] = Override(500, b"", content_type="text/plain")
     with pytest.raises(FluxerHTTPError) as caught:
-        await make_rest(session, base).get_roles("g1")
+        await make_rest(session, base).get_roles("1001")
     assert caught.value.status == 500
     assert caught.value.code is None
 
 
 async def test_500_with_json_list_body_raises_with_no_code(fake, session):
     state, base = fake
-    state.overrides["GET /api/v1/guilds/g1/roles"] = Override(500, b"[1, 2]")
+    state.overrides["GET /api/v1/guilds/1001/roles"] = Override(500, b"[1, 2]")
     with pytest.raises(FluxerHTTPError) as caught:
-        await make_rest(session, base).get_roles("g1")
+        await make_rest(session, base).get_roles("1001")
     assert caught.value.status == 500
     assert caught.value.code is None
 
@@ -264,13 +264,30 @@ async def test_500_with_json_list_body_raises_with_no_code(fake, session):
 async def test_get_roles_and_get_member_return_parsed_json(fake, session):
     state, base = fake
     roles = [{"id": "r1", "name": "GM"}, {"id": "r2", "name": "Player"}]
-    member = {"roles": ["r1"], "nick": "Gemma", "user": {"id": "u1"}}
-    state.roles["g1"] = roles
-    state.members[("g1", "u1")] = member
+    member = {"roles": ["r1"], "nick": "Gemma", "user": {"id": "2001"}}
+    state.roles["1001"] = roles
+    state.members[("1001", "2001")] = member
     rest = make_rest(session, base)
-    assert await rest.get_roles("g1") == roles
-    assert await rest.get_member("g1", "u1") == member
+    assert await rest.get_roles("1001") == roles
+    assert await rest.get_member("1001", "2001") == member
     assert [r.path for r in state.requests] == [
-        "/api/v1/guilds/g1/roles",
-        "/api/v1/guilds/g1/members/u1",
+        "/api/v1/guilds/1001/roles",
+        "/api/v1/guilds/1001/members/2001",
     ]
+
+
+async def test_rest_rejects_malformed_ids_without_making_a_request(fake, session):
+    state, base = fake
+    rest = make_rest(session, base)
+    embed = reply_to_embed(Reply("hi"), has_image=False)
+
+    with pytest.raises(ValueError):
+        await rest.send_message("../x", embed, None)
+    with pytest.raises(ValueError):
+        await rest.send_message("3001", embed, None, reply_to="1/../2")
+    with pytest.raises(ValueError):
+        await rest.get_roles("1001?x")
+    with pytest.raises(ValueError):
+        await rest.get_member("1001", "#2001")
+
+    assert state.requests == []
