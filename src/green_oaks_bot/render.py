@@ -39,6 +39,17 @@ def image_filename(card: Card) -> str:
     return name + ".png"
 
 
+def _check_layout(cards: tuple[Card, ...], kept_index: int | None) -> None:
+    """Table replies give kept_index None for one card and 0 or 1 for a pair; anything else is a bug."""
+    if len(cards) > 2:
+        raise ValueError(f"at most two cards can be rendered, got {len(cards)}")
+    if len(cards) == 2:
+        if isinstance(kept_index, bool) or kept_index not in (0, 1):
+            raise ValueError(f"a pair needs kept_index 0 or 1, got {kept_index!r}")
+    elif kept_index is not None:
+        raise ValueError(f"kept_index must be None for {len(cards)} card(s), got {kept_index!r}")
+
+
 class CardImages:
     """All 40 card images, loaded once."""
 
@@ -55,6 +66,7 @@ class CardImages:
         return len(self._images)
 
     def render(self, cards: tuple[Card, ...], kept_index: int | None, mode: ImageMode) -> bytes | None:
+        _check_layout(cards, kept_index)
         if mode == "off" or not cards:
             return None
         if len(cards) == 1:

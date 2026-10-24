@@ -142,6 +142,42 @@ def test_unkept_card_is_dimmed(images: CardImages, kept_index: int) -> None:
     assert _alpha_mean(im, unkept_slot) == pytest.approx(0.45 * raw_mean, abs=2.0)
 
 
+@pytest.mark.parametrize("kept_index", [0, 1])
+def test_kept_card_is_drawn_undimmed(images: CardImages, kept_index: int) -> None:
+    # Compare a pixel at the card's centre, where the raw card is opaque, against the single-card render.
+    # If the kept card were dimmed, its pixel would blend with the marker colour and differ.
+    card = Card(Suit.SPADES, Rank.ACE)
+    centre = (CARD_W // 2, CARD_H // 2)
+    raw = decode(images.render((card,), None, "large"))
+    assert raw.getpixel(centre)[3] == 255
+    im = decode(images.render((card, card), kept_index, "large"))
+    kept_centre = (slot_x(kept_index) + BORDER + centre[0], BORDER + centre[1])
+    assert im.getpixel(kept_centre) == raw.getpixel(centre)
+
+
+def test_pair_rejects_more_than_two_cards(images: CardImages) -> None:
+    three = (Card(Suit.SPADES, Rank.ACE),) * 3
+    with pytest.raises(ValueError):
+        images.render(three, 0, "large")
+
+
+@pytest.mark.parametrize("kept_index", [None, -1, 2, True])
+def test_pair_requires_kept_index_zero_or_one(images: CardImages, kept_index: int | None) -> None:
+    with pytest.raises(ValueError):
+        images.render(PAIR, kept_index, "large")
+
+
+@pytest.mark.parametrize("kept_index", [0, 1])
+def test_single_card_rejects_a_kept_index(images: CardImages, kept_index: int) -> None:
+    with pytest.raises(ValueError):
+        images.render((PAIR[0],), kept_index, "large")
+
+
+def test_empty_tuple_rejects_a_kept_index(images: CardImages) -> None:
+    with pytest.raises(ValueError):
+        images.render((), 0, "large")
+
+
 def test_pair_small_divides_both_dimensions_by_ten(images: CardImages) -> None:
     im = decode(images.render(PAIR, 1, "small"))
     assert im.size == (PAIR_W // 10, PAIR_H // 10)
