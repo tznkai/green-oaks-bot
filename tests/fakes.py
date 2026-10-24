@@ -7,12 +7,16 @@ app factory that shares the same state object.
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+import aiohttp
 from aiohttp import web
 
+TIMEOUT_DEFAULT = 2.0
 RATE_LIMIT_BODY = {"code": "RATE_LIMITED", "message": "slow", "global": False, "retry_after": 0.25}
 
 
@@ -47,6 +51,15 @@ class FakeFluxerState:
     # Keyed by "METHOD /path"; checked before any default behaviour.
     overrides: dict[str, Override] = field(default_factory=dict)
     requests: list[Recorded] = field(default_factory=list)
+    # Gateway fake: when False the fake never ACKs heartbeats (op 1 gets no op 11).
+    ack: bool = True
+    # One entry per websocket connection: the client frames it received, in order.
+    connections: list[list[dict[str, Any]]] = field(default_factory=list)
+    close_codes: list[int | None] = field(default_factory=list)
+    paths: list[str] = field(default_factory=list)
+    queries: list[dict[str, str]] = field(default_factory=list)
+    # repr() of any exception a scenario script raised (tests fail fast on these).
+    errors: list[str] = field(default_factory=list)
 
     def requests_to(self, path: str) -> list[Recorded]:
         return [r for r in self.requests if r.path == path]
@@ -134,4 +147,86 @@ def make_rest_app(state: FakeFluxerState) -> web.Application:
     app.router.add_post("/api/v1/channels/{cid}/messages", create_message)
     app.router.add_get("/api/v1/guilds/{gid}/roles", roles)
     app.router.add_get("/api/v1/guilds/{gid}/members/{uid}", member)
+    return app
+
+
+# ---------------------------------------------------------------------------
+# Gateway fake: a websocket route on "/" and "/gateway". Each connection runs
+# `script(ws, conn_index, state)`; the helpers below read/write frames on `ws`.
+# ---------------------------------------------------------------------------
+
+GatewayScript = Callable[[web.WebSocketResponse, int, FakeFluxerState], Awaitable[None]]
+GATEWAY_STATE: web.AppKey[FakeFluxerState] = web.AppKey("gateway_state", FakeFluxerState)
+
+
+async def send(ws: web.WebSocketResponse, op: int, d: Any = None, t: str | None = None, s: int | None = None) -> None:
+    payload: dict[str, Any] = {"op": op, "d": d}
+    if t is not None:
+        payload["t"] = t
+    if s is not None:
+        payload["s"] = s
+    await ws.send_json(payload)
+
+
+async def _receive(ws: web.WebSocketResponse, timeout: float) -> dict[str, Any] | None:
+    """Next client frame, recorded on its connection and ACKed if it is a heartbeat.
+
+    Returns None once the client has closed the socket.
+    """
+    msg = await asyncio.wait_for(ws.receive(), timeout)
+    if msg.type is not aiohttp.WSMsgType.TEXT:
+        return None
+    frame: dict[str, Any] = json.loads(msg.data)
+    ws.fake_frames.append(frame)  # type: ignore[attr-defined]
+    if frame.get("op") == 1 and ws.fake_state.ack:  # type: ignore[attr-defined]
+        await send(ws, 11)
+    return frame
+
+
+async def expect(ws: web.WebSocketResponse, op: int, timeout: float = TIMEOUT_DEFAULT) -> dict[str, Any]:
+    """Wait for the next client frame with `op` (overall deadline, heartbeats ACKed meanwhile)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        frame = await _receive(ws, deadline - loop.time())
+        if frame is None:
+            raise AssertionError(f"client closed while waiting for op {op}")
+        if frame.get("op") == op:
+            return frame
+
+
+async def hold(ws: web.WebSocketResponse, timeout: float = 5.0) -> None:
+    """Keep reading and ACKing heartbeats until the client closes the socket."""
+    while await _receive(ws, timeout) is not None:
+        pass
+
+
+def make_gateway_app(script: GatewayScript) -> web.Application:
+    """Fake gateway app. The shared state is `app[GATEWAY_STATE]`."""
+    state = FakeFluxerState()
+
+    async def gateway_ws(request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        index = len(state.connections)
+        frames: list[dict[str, Any]] = []
+        state.connections.append(frames)
+        state.close_codes.append(None)
+        state.paths.append(request.path)
+        state.queries.append(dict(request.query))
+        ws.fake_frames = frames  # type: ignore[attr-defined]
+        ws.fake_state = state  # type: ignore[attr-defined]
+        try:
+            await script(ws, index, state)
+        except Exception as exc:  # noqa: BLE001 - surfaced by tests as a fast failure
+            state.errors.append(repr(exc))
+        finally:
+            await ws.close()
+            state.close_codes[index] = ws.close_code
+        return ws
+
+    app = web.Application()
+    app[GATEWAY_STATE] = state
+    app.router.add_get("/", gateway_ws)
+    app.router.add_get("/gateway", gateway_ws)
     return app
