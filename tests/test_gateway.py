@@ -579,6 +579,40 @@ async def test_dispatch_handler_error_is_logged_with_traceback(aiohttp_server, s
     assert str(record.exc_info[1]) == "handler boom"
 
 
+async def test_dispatch_arriving_during_stop_is_not_started(aiohttp_server, session, caplog):
+    """A dispatch read after stop() has begun must not start a handler that stop() never waits for.
+
+    stop() flips `_stopping` before it closes the socket. aiohttp stops delivering frames once the
+    close starts, so the window cannot be reproduced over the wire deterministically: the flag is
+    set directly, then the fake sends the dispatch.
+    """
+    handled: list[str] = []
+    go = asyncio.Event()
+
+    async def handler(t: str, d: dict[str, Any]) -> None:
+        handled.append(t)
+
+    async def script(ws, i, state):
+        await send(ws, 10, HELLO_30)
+        await expect(ws, 2)
+        await go.wait()
+        await send(ws, 0, {"id": "late"}, t="MESSAGE_CREATE", s=1)
+        await hold(ws)
+
+    state = (app := make_gateway_app(script))[GATEWAY_STATE]
+    server = await aiohttp_server(app)
+    gw = Gateway(session, ws_url(server), "tok", handler, **{**FAST, "rng": random.Random(0)})
+    with caplog.at_level(logging.INFO, logger="green_oaks_bot.fluxer.gateway"):
+        async with running(gw):
+            await until(lambda: len(frames(state, 0)) >= 1, state)  # identified
+            gw._stopping = True
+            go.set()
+            await until(lambda: any("not starting MESSAGE_CREATE" in r.getMessage() for r in caplog.records),
+                        state)
+
+    assert handled == []  # the handler never ran
+    assert state.errors == []
+
 
 async def test_session_total_timeout_does_not_cut_the_websocket(aiohttp_server):
     """The production session has a total timeout (HTTP_TIMEOUT); the socket must outlive it."""

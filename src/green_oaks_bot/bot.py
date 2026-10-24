@@ -25,6 +25,10 @@ def _needs_gm_check(cmd: Command) -> bool:
     return cmd.name == "shuffle" or (cmd.name == "trump" and bool(cmd.args))
 
 
+def _id_text(value: Any) -> str | None:
+    return None if value is None else str(value)
+
+
 def _display_name(d: dict[str, Any]) -> str:
     member = d.get("member") or {}
     author = d.get("author") or {}
@@ -85,17 +89,18 @@ class Bot:
         author = d.get("author") or {}
         if author.get("bot") or (self.user_id is not None and str(author.get("id")) == self.user_id):
             return
-        # Ids below are interpolated into REST paths: drop the whole event unless they are snowflakes.
-        channel_id = str(d["channel_id"])
-        author_id = str(author.get("id"))
+        cmd = parse(d.get("content") or "", self.prefix)
+        if cmd is None:
+            return
+        # Ids below are interpolated into REST paths: drop the command unless they are snowflakes.
+        # A missing id is malformed like any other, so it is never a KeyError.
+        channel_id = _id_text(d.get("channel_id"))
+        author_id = _id_text(author.get("id"))
         guild_id = str(d["guild_id"]) if d.get("guild_id") else None
         if not is_snowflake(channel_id) or not is_snowflake(author_id) or \
                 (guild_id is not None and not is_snowflake(guild_id)):
-            log.warning("dropping message with malformed ids: channel %r, guild %r, author %r",
+            log.warning("dropping command with malformed ids: channel %r, guild %r, author %r",
                         channel_id, guild_id, author_id)
-            return
-        cmd = parse(d.get("content") or "", self.prefix)
-        if cmd is None:
             return
         # Only the reply reference is optional: a malformed message id just loses the reference.
         reply_to = str(d["id"]) if d.get("id") is not None else None

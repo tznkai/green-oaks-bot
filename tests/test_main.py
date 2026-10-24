@@ -11,6 +11,7 @@ import signal
 import sys
 from pathlib import Path
 
+import pytest
 from aiohttp import web
 
 from green_oaks_bot.bot import READY_LINE
@@ -125,8 +126,38 @@ async def test_sigterm_after_ready_exits_zero(aiohttp_server, tmp_path):
     assert len(gateway_state.connections) == 1  # the bot identified on the fake gateway
 
 
-def test_http_timeout_is_bounded_and_is_what_run_uses():
-    from green_oaks_bot import __main__ as entry
+class Refused(Exception):
+    """Raised by the patched discovery so run() stops at its first request."""
 
+
+async def test_run_opens_the_session_with_the_bounded_http_timeout(monkeypatch, tmp_path):
+    from green_oaks_bot import __main__ as entry
+    from green_oaks_bot.config import DEFAULT_ASSETS_DIR, Config
+    from green_oaks_bot.render import CardImages
+
+    opened: list[object] = []
+
+    class RecordingSession:
+        def __init__(self, *args, **kwargs):
+            opened.append(kwargs.get("timeout"))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    async def refuse_discovery(session, config):
+        raise Refused()
+
+    monkeypatch.setattr(entry.aiohttp, "ClientSession", RecordingSession)
+    monkeypatch.setattr(entry, "resolve_endpoints", refuse_discovery)
+    config = Config(token="x.y", instance_url=None, api_url="http://unused.test/api", gateway_url=None,
+                    gm_role_name="GM", prefix="!", data_dir=tmp_path, assets_dir=DEFAULT_ASSETS_DIR,
+                    log_level="INFO")
+
+    with pytest.raises(Refused):
+        await entry.run(config, CardImages(DEFAULT_ASSETS_DIR))
+
+    assert opened == [entry.HTTP_TIMEOUT]  # what run() actually passed, not just the constant
     assert entry.HTTP_TIMEOUT.total == 30  # aiohttp's default is 300 s
-    assert entry.HTTP_TIMEOUT.sock_read is None  # the websocket is not bounded by it

@@ -277,19 +277,39 @@ async def test_unexpected_error_is_logged_and_bot_keeps_running(
     assert "Trump:" in messages(state)[-1].payload["embeds"][0]["description"]
 
 
-async def test_error_outside_command_handling_does_not_escape_on_dispatch(
+async def test_command_missing_channel_id_is_dropped_without_a_traceback(
     fake, session, tmp_path, images, caplog
 ):
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
     malformed = event("!flip")
-    del malformed["channel_id"]  # fails before the per-command guard is entered
+    del malformed["channel_id"]
 
-    with caplog.at_level(logging.ERROR, logger="green_oaks_bot"):
+    with caplog.at_level(logging.WARNING, logger="green_oaks_bot"):
         await bot.on_dispatch("MESSAGE_CREATE", malformed)
 
-    assert any(r.exc_info is not None for r in caplog.records)
+    (warning,) = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warning.levelno == logging.WARNING
+    assert "malformed ids" in warning.getMessage()
+    assert warning.exc_info is None
     assert state.requests == []
+
+
+@pytest.mark.parametrize("missing", [True, False])
+async def test_non_command_with_malformed_channel_id_is_silent(
+    fake, session, tmp_path, images, caplog, missing
+):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+    message = event("hello there", channel="../x")
+    if missing:
+        del message["channel_id"]
+
+    with caplog.at_level(logging.INFO, logger="green_oaks_bot"):
+        await bot.on_dispatch("MESSAGE_CREATE", message)
+
+    assert state.requests == []
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 async def test_rest_failure_during_reply_is_contained(fake, session, tmp_path, images, caplog):
@@ -416,3 +436,47 @@ async def test_403_on_attachment_retries_text_only_and_warns_once(fake, session,
         assert description  # the command's own text, not the generic error
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "Attach Files" in r.getMessage()]
     assert len(warnings) == 1
+
+
+async def test_403_on_json_send_is_not_resent(fake, session, tmp_path, images, caplog):
+    """Images off: a 403 on a JSON-only send is not about attachments, so nothing is retried."""
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+    await bot.on_dispatch("MESSAGE_CREATE", event("!images off", id="40001"))
+    state.overrides[f"POST {MESSAGES}"] = Override(
+        status=403, body=b'{"code":"MISSING_PERMISSIONS","message":"Missing Permissions"}'
+    )
+
+    with caplog.at_level(logging.WARNING, logger="green_oaks_bot"):
+        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
+
+    command_post, error_reply = messages(state)[1:]
+    assert (command_post.content_type, command_post.status) == ("application/json", 403)
+    assert "flips" in command_post.payload["embeds"][0]["description"]
+    assert "Something went wrong" in error_reply.payload["embeds"][0]["description"]
+    assert len(messages(state)) == 3  # the command once, then the error reply
+    assert not [r for r in caplog.records if "Attach Files" in r.getMessage()]
+
+
+async def test_403_on_text_only_retry_falls_through_to_error_reply(
+    fake, session, tmp_path, images, caplog
+):
+    state, api = fake
+    state.forbid_attachments = True
+    state.overrides[f"POST {MESSAGES}"] = Override(
+        status=403, body=b'{"code":"MISSING_PERMISSIONS","message":"Missing Permissions"}'
+    )
+    bot = make_bot(session, api, tmp_path, images)
+
+    with caplog.at_level(logging.WARNING, logger="green_oaks_bot"):
+        await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40001"))
+
+    sent = messages(state)
+    assert [(r.content_type, r.status) for r in sent] == [
+        ("multipart/form-data", 403),  # the card
+        ("application/json", 403),     # the text-only retry, refused too
+        ("application/json", 403),     # the generic error reply, attempted
+    ]
+    assert "Something went wrong" in sent[-1].payload["embeds"][0]["description"]
+    assert [r for r in caplog.records if r.getMessage() == "could not send error reply"]
+    assert len([r for r in caplog.records if "Attach Files" in r.getMessage()]) == 1
