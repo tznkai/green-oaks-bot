@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
+import stat
 import time
 from pathlib import Path
 
@@ -229,26 +231,146 @@ async def test_concurrent_flips_in_one_channel_lose_and_duplicate_no_card(tmp_pa
 
 
 # AC9.6 (serialisation is checked directly, not by timing)
+# This alternation test is the one that guards the per-channel lock. The card-count test above
+# can pass without the lock, so do not delete this one as redundant.
 async def test_saves_for_one_channel_never_overlap(tmp_path: Path, monkeypatch):
     store = Store(tmp_path)
     store.load(GUILD, CHANNEL)
 
     events: list[str] = []
-    real_save = Store.save
+    real_write = Store._write
 
-    def traced_save(self, guild_id, channel_id, table):
+    def traced_write(self, path, data):
         events.append("start")
         time.sleep(0.001)  # runs in a worker thread; widens any overlap window
-        real_save(self, guild_id, channel_id, table)
+        real_write(self, path, data)
         events.append("end")
 
-    monkeypatch.setattr(Store, "save", traced_save)
+    monkeypatch.setattr(Store, "_write", traced_write)
     await asyncio.gather(*[
         store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE)) for _ in range(39)
     ])
 
     assert len(events) == 2 * 39
     assert all(e == ("start" if i % 2 == 0 else "end") for i, e in enumerate(events))
+
+
+# AC9.6 (cancellation: the lock must outlast the orphaned save thread)
+async def test_cancelled_save_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+
+    events: list[str] = []
+    real_write = Store._write
+
+    def traced_write(self, path, data):
+        events.append("start")
+        time.sleep(0.2)  # the cancellation lands while this thread is still writing
+        real_write(self, path, data)
+        events.append("end")
+
+    monkeypatch.setattr(Store, "_write", traced_write)
+    task = asyncio.create_task(store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE)))
+    while "start" not in events:
+        await asyncio.sleep(0.001)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # The thread finished before the cancellation was re-raised, so the lock was still held.
+    assert events == ["start", "end"]
+    assert not store.lock(GUILD, CHANNEL).locked()
+
+    await store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE))
+    assert events == ["start", "end", "start", "end"]
+
+    # Disk ends consistent with memory: both flips are present, no card missing or doubled.
+    memory, _ = store.load(GUILD, CHANNEL)
+    disk, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    assert state(disk) == state(memory)
+    assert len(unique_codes(disk)) == 40
+    assert len(disk.deck.discards) == 1 + 2  # the turned-up card plus two flips
+
+
+# AC9.6 (a cancelled write that has finished keeps memory, which then matches disk)
+async def test_cancelled_completed_save_keeps_new_state_in_memory(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+    real_write = Store._write
+    started: list[str] = []
+
+    def slow_write(self, path, data):
+        started.append("start")
+        time.sleep(0.2)
+        real_write(self, path, data)
+
+    monkeypatch.setattr(Store, "_write", slow_write)
+    task = asyncio.create_task(store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE)))
+    while not started:
+        await asyncio.sleep(0.001)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    memory, _ = store.load(GUILD, CHANNEL)
+    disk, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    assert len(memory.deck.discards) == 1 + 1  # the turned-up card plus the one flip
+    assert state(disk) == state(memory)
+
+
+# AC9.6 (rollback: a command that mutates and then raises leaves no trace)
+async def test_failed_action_rolls_back_memory_and_disk(tmp_path: Path):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+    before = state(store.load(GUILD, CHANNEL)[0])
+
+    def flip_then_raise(t, n):
+        t.flip(ALICE)
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await store.transact(GUILD, CHANNEL, flip_then_raise)
+
+    seen: list = []
+    await store.transact(GUILD, CHANNEL, lambda t, n: seen.append(state(t)))
+    assert seen == [before]
+    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == before
+
+
+# AC9.3 (rollback: a save that fails after the action mutated memory)
+async def test_failed_save_rolls_memory_back_to_match_file(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+    before = state(store.load(GUILD, CHANNEL)[0])
+
+    def failing_replace(src, dst):
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(store_mod.os, "replace", failing_replace)
+    with pytest.raises(OSError):
+        await store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE))
+    monkeypatch.undo()
+
+    seen: list = []
+    await store.transact(GUILD, CHANNEL, lambda t, n: seen.append(state(t)))
+    assert seen == [before]
+    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == before
+
+
+# AC9.3 (a failing directory fsync is best-effort: the replace already happened)
+def test_directory_fsync_failure_does_not_fail_save(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    t = make_table(["KC"], trump="S", seed=7)
+    real_fsync = os.fsync
+
+    def failing_fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError("fsync refused")
+        real_fsync(fd)  # the temp file's own fsync still succeeds
+
+    monkeypatch.setattr(store_mod.os, "fsync", failing_fsync)
+    store.save(GUILD, CHANNEL, t)  # must not raise
+    monkeypatch.undo()
+    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == state(t)
 
 
 # AC1.6
@@ -266,3 +388,100 @@ def test_second_load_on_same_store_returns_no_notice(tmp_path: Path):
     second, notice = store.load(GUILD, CHANNEL)
     assert second is first
     assert notice is None
+
+
+# AC9.4 (a second corruption of the same channel must not overwrite the first .corrupt copy)
+def test_second_corruption_keeps_first_corrupt_copy(tmp_path: Path):
+    store = Store(tmp_path)
+    path = store.path(GUILD, CHANNEL)
+    path.parent.mkdir(parents=True)
+    path.write_text("{first", encoding="utf-8")
+    store.load(GUILD, CHANNEL)
+
+    path.write_text("{second", encoding="utf-8")
+    Store(tmp_path).load(GUILD, CHANNEL)
+
+    assert path.with_name(path.name + ".corrupt").read_text(encoding="utf-8") == "{first"
+    assert path.with_name(path.name + ".corrupt.1").read_text(encoding="utf-8") == "{second"
+
+
+def dict_with_outcome() -> dict:
+    return table_to_dict(make_table(
+        ["KC", "2H"], trump="S", pending=Pending("42", "grumble_upgrade"),
+        last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES),
+    ))
+
+
+def _set(*keys):
+    def apply(d: dict, value) -> None:
+        target = d
+        for key in keys[:-1]:
+            target = target[key]
+        target[keys[-1]] = value
+    return apply
+
+
+# AC9.4 (loose values that the old loader accepted must now count as corrupt)
+BAD_FIELDS = [
+    ("aces_drawn_five", _set("aces_drawn"), 5),
+    ("aces_drawn_negative", _set("aces_drawn"), -1),
+    ("aces_drawn_true", _set("aces_drawn"), True),
+    ("aces_drawn_float", _set("aces_drawn"), 1.5),
+    ("aces_drawn_string", _set("aces_drawn"), "1"),
+    ("version_true", _set("version"), True),
+    ("trump_not_a_suit", _set("trump"), "X"),
+    ("trump_not_a_string", _set("trump"), 5),
+    ("draw_not_a_list", _set("draw"), "KC"),
+    ("draw_entry_not_a_string", _set("draw"), [5, "2H"]),
+    ("pending_not_an_object", _set("pending"), "grumble_upgrade"),
+    ("pending_user_id_int", _set("pending", "user_id"), 42),
+    ("pending_kind_unknown", _set("pending", "kind"), "bogus"),
+    ("outcome_trump_int", _set("last_outcome", "trump"), 1),
+    ("outcome_success_string", _set("last_outcome", "success"), "yes"),
+    ("outcome_changes_trump_none", _set("last_outcome", "changes_trump"), None),
+    ("outcome_haughtiness_true", _set("last_outcome", "haughtiness"), True),
+    ("outcome_bother_float", _set("last_outcome", "bother"), 1.5),
+    ("outcome_keyword_int", _set("last_outcome", "keyword"), 5),
+    ("outcome_not_an_object", _set("last_outcome"), []),
+    ("style_int", _set("style"), 5),
+    ("images_int", _set("images"), 1),
+]
+
+
+# AC9.4 (loose validation)
+@pytest.mark.parametrize("apply, value", [(a, v) for _, a, v in BAD_FIELDS], ids=[n for n, _, _ in BAD_FIELDS])
+def test_loose_field_values_are_treated_as_corrupt(tmp_path: Path, apply, value):
+    d = dict_with_outcome()
+    apply(d, value)
+    store = Store(tmp_path)
+    path = store.path(GUILD, CHANNEL)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(d), encoding="utf-8")
+
+    table, notice = store.load(GUILD, CHANNEL)
+
+    assert notice is not None and "unreadable" in notice
+    assert path.with_name(path.name + ".corrupt").is_file()
+    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == state(table)
+
+
+# AC9.4 (valid values still load: the stricter checks must not reject real state)
+def test_strict_validation_accepts_good_state(tmp_path: Path):
+    t = make_table(["KC", "2H"], trump="S", pending=Pending("42", "grumble_upgrade"),
+                   last_outcome=resolve(Card(Suit.CLUBS, Rank.KING), Suit.SPADES), aces_drawn=4)
+    rebuilt = table_from_dict(table_to_dict(t), random.Random(0), prefix="!")
+    assert state(rebuilt) == state(t)
+
+
+# AC9.4 (deeply nested JSON raises RecursionError, which must count as corrupt)
+def test_deeply_nested_json_is_treated_as_corrupt(tmp_path: Path):
+    store = Store(tmp_path)
+    path = store.path(GUILD, CHANNEL)
+    path.parent.mkdir(parents=True)
+    path.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+
+    table, notice = store.load(GUILD, CHANNEL)
+
+    assert notice is not None and "unreadable" in notice
+    assert path.with_name(path.name + ".corrupt").is_file()
+    assert len(table.deck.draw) + len(table.deck.discards) == 40

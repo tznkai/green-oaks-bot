@@ -21,6 +21,10 @@ log = logging.getLogger(__name__)
 
 FORMAT_VERSION = 1
 _SNOWFLAKE = re.compile(r"[0-9]{1,25}")  # fullmatch: "$" would accept a trailing newline
+_PENDING_KINDS = ("grumble_redraw", "grumble_upgrade", "choose_trump")
+_STYLES = ("emoji", "short", "long")
+_IMAGE_MODES = ("large", "small", "off")
+_MAX_ACES = 4
 T = TypeVar("T")
 
 
@@ -32,11 +36,34 @@ def outcome_to_dict(o: Outcome) -> dict[str, Any]:
     }
 
 
-def outcome_from_dict(d: dict[str, Any]) -> Outcome:
+def _strict(value: Any, kind: type, what: str) -> Any:
+    """Reject values of the wrong JSON type; bool is excluded from int because bool subclasses int."""
+    if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
+        raise TypeError(f"{what} must be {kind.__name__}")
+    return value
+
+
+def _str_list(value: Any, what: str) -> list[str]:
+    if not isinstance(value, list):
+        raise TypeError(f"{what} must be a list")
+    return [_strict(item, str, f"{what} entry") for item in value]
+
+
+def outcome_from_dict(d: Any) -> Outcome:
+    if not isinstance(d, dict):
+        raise TypeError("outcome is not a JSON object")
+    keyword = d["keyword"]
+    if keyword is not None:
+        _strict(keyword, str, "keyword")
     return Outcome(
-        card=Card.from_code(d["card"]), trump=bool(d["trump"]), success=bool(d["success"]),
-        haughtiness=int(d["haughtiness"]), bother=int(d["bother"]), keyword=d["keyword"],
-        grumble=GrumbleOption(d["grumble"]), changes_trump=bool(d["changes_trump"]),
+        card=Card.from_code(_strict(d["card"], str, "outcome card")),
+        trump=_strict(d["trump"], bool, "outcome trump"),
+        success=_strict(d["success"], bool, "outcome success"),
+        haughtiness=_strict(d["haughtiness"], int, "haughtiness"),
+        bother=_strict(d["bother"], int, "bother"),
+        keyword=keyword,
+        grumble=GrumbleOption(d["grumble"]),
+        changes_trump=_strict(d["changes_trump"], bool, "changes_trump"),
     )
 
 
@@ -57,20 +84,76 @@ def table_to_dict(t: Table) -> dict[str, Any]:
 def table_from_dict(d: Any, rng: random.Random, *, prefix: str) -> Table:
     if not isinstance(d, dict):
         raise TypeError("state is not a JSON object")
-    if d.get("version") != FORMAT_VERSION:
-        raise ValueError(f"unsupported state version: {d.get('version')!r}")
-    pending = d["pending"]
-    if pending is not None and pending["kind"] not in ("grumble_redraw", "grumble_upgrade", "choose_trump"):
-        raise ValueError(f"bad pending kind: {pending['kind']!r}")
-    if d["style"] not in ("emoji", "short", "long") or d["images"] not in ("large", "small", "off"):
+    version = d.get("version")
+    if type(version) is not int or version != FORMAT_VERSION:
+        raise ValueError(f"unsupported state version: {version!r}")
+    draw = _str_list(d["draw"], "draw")
+    discards = _str_list(d["discards"], "discards")
+    trump = _strict(d["trump"], str, "trump")
+    if trump not in Suit.__members__:
+        raise ValueError(f"bad trump: {trump!r}")
+    aces_drawn = _strict(d["aces_drawn"], int, "aces_drawn")
+    if not 0 <= aces_drawn <= _MAX_ACES:
+        raise ValueError(f"aces_drawn out of range: {aces_drawn!r}")
+    pending_d = d["pending"]
+    pending: Pending | None = None
+    if pending_d is not None:
+        if not isinstance(pending_d, dict):
+            raise ValueError("pending is not a JSON object")
+        kind = pending_d["kind"]
+        if kind not in _PENDING_KINDS:
+            raise ValueError(f"bad pending kind: {kind!r}")
+        pending = Pending(_strict(pending_d["user_id"], str, "pending user_id"), kind)
+    style = _strict(d["style"], str, "style")
+    images = _strict(d["images"], str, "images")
+    if style not in _STYLES or images not in _IMAGE_MODES:
         raise ValueError("bad display settings")
+    last_outcome = None if d["last_outcome"] is None else outcome_from_dict(d["last_outcome"])
     return Table(
-        Deck.from_codes(d["draw"], d["discards"]), Suit[d["trump"]], rng, prefix=prefix,
-        aces_drawn=int(d["aces_drawn"]),
-        pending=None if pending is None else Pending(str(pending["user_id"]), pending["kind"]),
-        last_outcome=None if d["last_outcome"] is None else outcome_from_dict(d["last_outcome"]),
-        style=d["style"], images=d["images"],
+        Deck.from_codes(draw, discards), Suit[trump], rng, prefix=prefix,
+        aces_drawn=aces_drawn, pending=pending, last_outcome=last_outcome,
+        style=style, images=images,
     )
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Make a rename durable. Best effort: the replace has already happened, so a failure only logs."""
+    if os.name != "posix":
+        return
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+    except OSError as exc:
+        log.warning("cannot open %s to fsync it (%s)", directory, exc)
+        return
+    try:
+        os.fsync(fd)
+    except OSError as exc:
+        log.warning("fsync of %s failed (%s)", directory, exc)
+    finally:
+        os.close(fd)
+
+
+def _start[R](fn: Callable[..., R], *args: Any) -> asyncio.Future[R]:
+    return asyncio.ensure_future(asyncio.to_thread(fn, *args))
+
+
+async def _settle[R](fut: asyncio.Future[R]) -> R:
+    """Wait for a worker-thread future to finish, even if this task is cancelled.
+
+    The caller holds the channel lock across this await, so the lock must not be released
+    while the thread may still touch the files. A cancellation is re-raised once the thread is done.
+    """
+    cancelled = False
+    while not fut.done():
+        try:
+            await asyncio.wait({fut})
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        if not fut.cancelled():
+            fut.exception()  # mark any worker error as retrieved
+        raise asyncio.CancelledError()
+    return fut.result()
 
 
 class Store:
@@ -99,8 +182,8 @@ class Store:
         if path.exists():
             try:
                 table = table_from_dict(json.loads(path.read_text("utf-8")), self.rng, prefix=self.prefix)
-            except (ValueError, KeyError, TypeError) as exc:   # JSONDecodeError is a ValueError
-                corrupt = path.with_name(path.name + ".corrupt")
+            except (ValueError, KeyError, TypeError, RecursionError) as exc:   # JSONDecodeError is a ValueError
+                corrupt = self._corrupt_target(path)
                 os.replace(path, corrupt)
                 log.warning("corrupt state %s (%s); moved to %s", path, exc, corrupt)
                 table = Table.new(self.rng, prefix=self.prefix)
@@ -114,34 +197,58 @@ class Store:
         self._tables[key] = table
         return table, notice
 
+    @staticmethod
+    def _corrupt_target(path: Path) -> Path:
+        """First corruption is `<name>.corrupt`; later ones get `.corrupt.1`, `.corrupt.2`, ... so none is overwritten."""
+        target = path.with_name(path.name + ".corrupt")
+        n = 0
+        while target.exists():
+            n += 1
+            target = path.with_name(f"{path.name}.corrupt.{n}")
+        return target
+
     def save(self, guild_id: str, channel_id: str, table: Table) -> None:
-        path = self.path(guild_id, channel_id)
+        self._write(self.path(guild_id, channel_id), table_to_dict(table))
+
+    def _write(self, path: Path, data: dict[str, Any]) -> None:
+        """Atomically replace `path` with `data`. Runs in a worker thread and touches no shared state."""
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
         tmp = Path(tmp_name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(table_to_dict(table), fh, ensure_ascii=False, indent=1)
+                json.dump(data, fh, ensure_ascii=False, indent=1)
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp, path)
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
+        _fsync_dir(path.parent)
 
     async def transact(self, guild_id: str, channel_id: str,
                        fn: Callable[[Table, str | None], T]) -> T:
-        """Serialise one command for a channel: load -> fn -> save."""
+        """Serialise one command for a channel: load -> fn -> save.
+
+        The lock is held until every worker thread for this channel has finished, including when
+        this task is cancelled, so two threads never touch the channel's file at once.
+        """
+        key = (guild_id, channel_id)
+        path = self.path(guild_id, channel_id)
         async with self.lock(guild_id, channel_id):
-            table, notice = await asyncio.to_thread(self.load, guild_id, channel_id)
+            table, notice = await _settle(_start(self.load, guild_id, channel_id))
             snapshot = table_to_dict(table)
+            write: asyncio.Future[None] | None = None
             try:
                 result = fn(table, notice)
-                await asyncio.to_thread(self.save, guild_id, channel_id, table)
-            except Exception:
-                # Keep memory consistent with disk if the action or save failed.
-                # Not BaseException: on cancellation the threaded save still finishes,
-                # so memory already matches disk.
-                self._tables[(guild_id, channel_id)] = table_from_dict(snapshot, self.rng, prefix=self.prefix)
+                # Built on the event loop, so the worker thread never reads the live Table.
+                data = table_to_dict(table)
+                write = _start(self._write, path, data)
+                await _settle(write)
+            except BaseException:
+                # Roll memory back unless the new state is already on disk. A write that
+                # completed before a cancellation keeps memory and disk in step.
+                if write is None or write.exception() is not None:
+                    self._tables[key] = table_from_dict(snapshot, self.rng, prefix=self.prefix)
                 raise
             return result
