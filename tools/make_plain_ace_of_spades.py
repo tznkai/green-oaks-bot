@@ -107,12 +107,18 @@ def assert_fill_clear_of_indices(im: Image.Image) -> None:
                     raise ValueError(f"corner index ink at {(x, y)} inside fill region")
 
 
+def load_rgba(path: Path) -> Image.Image:
+    """Decode `path` into memory as RGBA and close the file, so no handle outlives this call."""
+    with Image.open(path) as im:
+        return im.convert("RGBA")
+
+
 def build(assets: Path, out: Path) -> None:
     """Write the plain-centre Ace of Spades to `out`, reading the other cards from `assets`."""
-    hearts = Image.open(assets / "ace_of_hearts.png").convert("RGBA")
-    clubs = Image.open(assets / "ace_of_clubs.png").convert("RGBA")
-    two = Image.open(assets / "2_of_spades.png").convert("RGBA")
-    original = Image.open(assets / "ace_of_spades.png").convert("RGBA")
+    hearts = load_rgba(assets / "ace_of_hearts.png")
+    clubs = load_rgba(assets / "ace_of_clubs.png")
+    two = load_rgba(assets / "2_of_spades.png")
+    original = load_rgba(assets / "ace_of_spades.png")
     for im in (hearts, clubs, two, original):
         if im.size != CARD_SIZE:
             raise ValueError(f"expected {CARD_SIZE}, got {im.size}")

@@ -34,11 +34,18 @@ def load_script():
 CENTRE_WINDOW = (100, 120, 400, 600)  # clear of both corner indices and the card edge
 
 
-def test_committed_ace_of_spades_is_byte_identical_to_script_output(tmp_path: Path) -> None:
+def decoded(path: Path) -> tuple[str, tuple[int, int], bytes]:
+    """The pixels of a PNG as (mode, size, raw bytes). Compared instead of the file's bytes, because
+    the compressed encoding depends on the Pillow and zlib versions, while the pixels do not."""
+    with Image.open(path) as im:
+        return im.mode, im.size, im.tobytes()
+
+
+def test_committed_ace_of_spades_pixels_match_script_output(tmp_path: Path) -> None:
     script = load_script()
     out = tmp_path / "ace_of_spades.png"
     script.build(ASSETS, out)
-    assert out.read_bytes() == (ASSETS / "ace_of_spades.png").read_bytes()
+    assert decoded(out) == decoded(ASSETS / "ace_of_spades.png")
 
 
 def test_script_is_deterministic(tmp_path: Path) -> None:
@@ -46,14 +53,14 @@ def test_script_is_deterministic(tmp_path: Path) -> None:
     first, second = tmp_path / "a.png", tmp_path / "b.png"
     script.build(ASSETS, first)
     script.build(ASSETS, second)
-    assert first.read_bytes() == second.read_bytes()
+    assert decoded(first) == decoded(second)
 
 
 def test_ace_of_spades_is_card_sized_rgba() -> None:
-    im = Image.open(ASSETS / "ace_of_spades.png")
-    assert im.format == "PNG"
-    assert im.size == CARD_SIZE
-    assert im.mode == "RGBA"
+    with Image.open(ASSETS / "ace_of_spades.png") as im:
+        assert im.format == "PNG"
+        assert im.size == CARD_SIZE
+        assert im.mode == "RGBA"
 
 
 def dark_components(im: Image.Image, box: tuple[int, int, int, int]) -> int:
@@ -81,21 +88,21 @@ def dark_components(im: Image.Image, box: tuple[int, int, int, int]) -> int:
 
 def test_ornate_centre_is_gone() -> None:
     # The ornate spade is hundreds of separate filigree strokes; a plain spade is one solid blob.
-    im = Image.open(ASSETS / "ace_of_spades.png")
-    assert dark_components(im, CENTRE_WINDOW) == 1
+    with Image.open(ASSETS / "ace_of_spades.png") as im:
+        assert dark_components(im, CENTRE_WINDOW) == 1
 
 
 def test_new_pip_matches_other_aces_centre_pip() -> None:
     script = load_script()
     reference = []
     for name in ("ace_of_hearts.png", "ace_of_clubs.png"):
-        im = Image.open(ASSETS / name).convert("RGBA")
-        box = script.pip_box(im)
+        with Image.open(ASSETS / name) as im:
+            box = script.pip_box(im.convert("RGBA"))
         assert box is not None
         reference.append(box)
     ref_h = sum(y1 - y0 + 1 for _, y0, _, y1 in reference) / len(reference)
-    im = Image.open(ASSETS / "ace_of_spades.png").convert("RGBA")
-    pip = script.pip_box(im)
+    with Image.open(ASSETS / "ace_of_spades.png") as im:
+        pip = script.pip_box(im.convert("RGBA"))
     assert pip is not None
     height = pip[3] - pip[1] + 1
     assert abs(height - ref_h) <= 0.05 * ref_h
@@ -112,6 +119,6 @@ def test_every_deck_asset_is_500x726_rgba() -> None:
     names = sorted({image_filename(card) for card in FULL_DECK})
     assert len(names) == 40
     for name in names:
-        im = Image.open(ASSETS / name)
-        assert im.size == CARD_SIZE, name
-        assert im.mode == "RGBA", name
+        with Image.open(ASSETS / name) as im:
+            assert im.size == CARD_SIZE, name
+            assert im.mode == "RGBA", name
