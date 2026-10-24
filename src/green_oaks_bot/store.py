@@ -133,27 +133,57 @@ def _fsync_dir(directory: Path) -> None:
         os.close(fd)
 
 
-def _start[R](fn: Callable[..., R], *args: Any) -> asyncio.Future[R]:
-    return asyncio.ensure_future(asyncio.to_thread(fn, *args))
+class _ThreadJob[R]:
+    """One call run in a worker thread, whose completion is signalled by the thread itself.
 
-
-async def _settle[R](fut: asyncio.Future[R]) -> R:
-    """Wait for a worker-thread future to finish, even if this task is cancelled.
-
-    The caller holds the channel lock across this await, so the lock must not be released
-    while the thread may still touch the files. A cancellation is re-raised once the thread is done.
+    No asyncio future wraps the thread, so nothing can mark the job finished before the thread
+    has returned. Only `_run` (on the thread) and `_complete` (on the loop) ever set its state.
     """
-    cancelled = False
-    while not fut.done():
+
+    def __init__(self, fn: Callable[..., R], *args: Any) -> None:
+        self._loop = asyncio.get_running_loop()
+        self._finished = asyncio.Event()
+        self._value: R | None = None
+        self._error: BaseException | None = None
+        self._loop.run_in_executor(None, self._run, fn, args)
+
+    def _run(self, fn: Callable[..., R], args: tuple[Any, ...]) -> None:
         try:
-            await asyncio.wait({fut})
-        except asyncio.CancelledError:
-            cancelled = True
-    if cancelled:
-        if not fut.cancelled():
-            fut.exception()  # mark any worker error as retrieved
-        raise asyncio.CancelledError()
-    return fut.result()
+            value = fn(*args)
+        except BaseException as exc:  # noqa: BLE001 - every outcome, including errors, is handed to the task
+            self._loop.call_soon_threadsafe(self._complete, None, exc)
+        else:
+            self._loop.call_soon_threadsafe(self._complete, value, None)
+
+    def _complete(self, value: R | None, error: BaseException | None) -> None:
+        self._value = value
+        self._error = error
+        self._finished.set()
+
+    @property
+    def succeeded(self) -> bool:
+        return self._finished.is_set() and self._error is None
+
+    async def settle(self) -> None:
+        """Wait until the thread has finished, even if this task is cancelled.
+
+        The caller holds the channel lock across this await, so the lock must not be released
+        while the thread may still touch the files. A cancellation is re-raised once the thread is done.
+        """
+        cancelled = False
+        while not self._finished.is_set():
+            try:
+                await self._finished.wait()
+            except asyncio.CancelledError:
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError()
+
+    def result(self) -> R:
+        """The thread's return value or its exception; only meaningful after `settle` has returned."""
+        if self._error is not None:
+            raise self._error
+        return self._value  # type: ignore[return-value]
 
 
 class Store:
@@ -236,19 +266,22 @@ class Store:
         key = (guild_id, channel_id)
         path = self.path(guild_id, channel_id)
         async with self.lock(guild_id, channel_id):
-            table, notice = await _settle(_start(self.load, guild_id, channel_id))
+            load = _ThreadJob(self.load, guild_id, channel_id)
+            await load.settle()
+            table, notice = load.result()
             snapshot = table_to_dict(table)
-            write: asyncio.Future[None] | None = None
+            write: _ThreadJob[None] | None = None
             try:
                 result = fn(table, notice)
                 # Built on the event loop, so the worker thread never reads the live Table.
                 data = table_to_dict(table)
-                write = _start(self._write, path, data)
-                await _settle(write)
+                write = _ThreadJob(self._write, path, data)
+                await write.settle()
+                write.result()
             except BaseException:
                 # Roll memory back unless the new state is already on disk. A write that
                 # completed before a cancellation keeps memory and disk in step.
-                if write is None or write.exception() is not None:
+                if write is None or not write.succeeded:
                     self._tables[key] = table_from_dict(snapshot, self.rng, prefix=self.prefix)
                 raise
             return result

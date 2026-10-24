@@ -80,18 +80,19 @@ class CardImages:
         im.save(out, format="PNG")
         return out.getvalue()
 
-    def _pair(self, cards: tuple[Card, ...], kept_index: int | None) -> Image.Image:
+    def _pair(self, cards: tuple[Card, ...], kept_index: int) -> Image.Image:
+        """Two cards side by side. `_check_layout` has already guaranteed two cards and kept_index 0 or 1."""
         first = self._images[cards[0].code]
         w, h = first.size
         slot_w = w + 2 * BORDER
         canvas = Image.new("RGBA", (2 * w + GAP + 2 * BORDER, h + 2 * BORDER), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
-        for i, card in enumerate(cards[:2]):
+        for i, card in enumerate(cards):
             x = i * (w + GAP)
             img = self._images[card.code]
-            if kept_index is not None and i == kept_index:
+            if i == kept_index:
                 draw.rectangle([x, 0, x + slot_w - 1, h + 2 * BORDER - 1], fill=MARK_COLOUR)
-            elif kept_index is not None:
+            else:
                 img = img.copy()
                 img.putalpha(img.getchannel("A").point(lambda a: int(a * DIM_ALPHA)))
             canvas.alpha_composite(img, (x + BORDER, BORDER))

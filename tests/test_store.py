@@ -7,6 +7,7 @@ import json
 import os
 import random
 import stat
+import threading
 import time
 from pathlib import Path
 
@@ -317,6 +318,87 @@ async def test_cancelled_completed_save_keeps_new_state_in_memory(tmp_path: Path
     assert state(disk) == state(memory)
 
 
+async def _wait_for(events: list[str], marker: str) -> None:
+    for _ in range(5000):
+        if marker in events:
+            return
+        await asyncio.sleep(0.001)
+    raise AssertionError(f"{marker!r} never reached the trace")
+
+
+# AC9.6 (shutdown cancels every task on the loop, so the write thread must still hold the lock).
+# The write thread blocks on an event rather than a sleep, so the cancellation always lands mid-write.
+async def test_cancel_all_tasks_mid_write_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+    before = state(store.load(GUILD, CHANNEL)[0])
+    events: list[str] = []
+    release = threading.Event()
+
+    def blocked_failing_write(self, path, data):
+        events.append("start")
+        release.wait(10)
+        events.append("end")
+        raise OSError("disk full")  # fails before touching the file, so disk keeps the old state
+
+    monkeypatch.setattr(Store, "_write", blocked_failing_write)
+    task = asyncio.create_task(store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE)))
+    await _wait_for(events, "start")
+    for other in asyncio.all_tasks():
+        if other is not asyncio.current_task():
+            other.cancel()
+    for _ in range(50):  # let the loop deliver the cancellation while the thread is still blocked
+        await asyncio.sleep(0)
+    assert events == ["start"]
+    assert store.lock(GUILD, CHANNEL).locked()
+    assert not task.done()
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert events == ["start", "end"]
+    assert not store.lock(GUILD, CHANNEL).locked()
+    # The write raised, so memory rolls back and matches the untouched file.
+    assert state(store.load(GUILD, CHANNEL)[0]) == before
+    assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == before
+
+
+# AC9.6 (a write that finished after a cancel keeps the cancel as the outcome, with no masked error)
+async def test_cancel_all_tasks_mid_write_on_success_keeps_new_state(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+    real_write = Store._write
+    events: list[str] = []
+    release = threading.Event()
+
+    def blocked_write(self, path, data):
+        events.append("start")
+        release.wait(10)
+        real_write(self, path, data)
+        events.append("end")
+
+    monkeypatch.setattr(Store, "_write", blocked_write)
+    task = asyncio.create_task(store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE)))
+    await _wait_for(events, "start")
+    for other in asyncio.all_tasks():
+        if other is not asyncio.current_task():
+            other.cancel()
+    for _ in range(50):
+        await asyncio.sleep(0)
+    assert events == ["start"]
+    assert store.lock(GUILD, CHANNEL).locked()
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert events == ["start", "end"]
+    assert not store.lock(GUILD, CHANNEL).locked()
+    memory, _ = store.load(GUILD, CHANNEL)
+    disk, _ = Store(tmp_path).load(GUILD, CHANNEL)
+    assert len(memory.deck.discards) == 1 + 1  # the turned-up card plus the one flip
+    assert state(disk) == state(memory)
+
+
 # AC9.6 (rollback: a command that mutates and then raises leaves no trace)
 async def test_failed_action_rolls_back_memory_and_disk(tmp_path: Path):
     store = Store(tmp_path)
@@ -371,6 +453,29 @@ def test_directory_fsync_failure_does_not_fail_save(tmp_path: Path, monkeypatch)
     store.save(GUILD, CHANNEL, t)  # must not raise
     monkeypatch.undo()
     assert state(Store(tmp_path).load(GUILD, CHANNEL)[0]) == state(t)
+
+
+# AC9.3 (the rename is made durable by fsyncing the parent directory)
+@pytest.mark.skipif(os.name != "posix", reason="directory fsync is POSIX-only")
+def test_save_fsyncs_parent_directory(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    t = make_table(["KC"], trump="S", seed=7)
+    real_fsync = os.fsync
+    directory_fsyncs: list[tuple[int, int]] = []
+
+    def recording_fsync(fd):
+        st = os.fstat(fd)
+        if stat.S_ISDIR(st.st_mode):
+            directory_fsyncs.append((st.st_dev, st.st_ino))
+        real_fsync(fd)
+
+    monkeypatch.setattr(store_mod.os, "fsync", recording_fsync)
+    store.save(GUILD, CHANNEL, t)
+    monkeypatch.undo()
+
+    parent = store.path(GUILD, CHANNEL).parent
+    parent_st = os.stat(parent)
+    assert (parent_st.st_dev, parent_st.st_ino) in directory_fsyncs
 
 
 # AC1.6
