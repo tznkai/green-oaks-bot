@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "green-oaks-bot"
+version = "0.1.0"
+description = "Fluxer bot for Green Oaks ArterioscleroSys card checks"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.11",
+    "Pillow>=11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4",
+    "pytest-asyncio>=1.0",
+    "pytest-aiohttp>=1.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/green_oaks_bot"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
