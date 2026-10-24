@@ -299,35 +299,63 @@ def test_show_trump_names_suit_and_symbol():
 
 
 # AC6.2
-def test_kept_trump_ace_prompts_flipper_with_suits_in_discards_and_sets_trump():
+def test_kept_trump_ace_prompts_flipper_with_non_trump_suits_in_discards_and_sets_trump():
     t = make_table(["AH"], trump="H", discards=["3C", "4S"])
     t.flip(ALICE)
     assert t.pending == Pending(ALICE.user_id, "choose_trump")
-    assert [s.long_name for s in t.valid_trump_choices()] == ["Clubs", "Hearts", "Spades"]
+    assert [s.long_name for s in t.valid_trump_choices()] == ["Clubs", "Spades"]
     reply = t.set_trump(ALICE, Suit.CLUBS)
     assert t.trump is Suit.CLUBS
     assert "Clubs" in reply.text
     assert t.pending is None
 
 
-def test_trump_prompt_lists_exactly_clubs_hearts_spades():
+def test_trump_prompt_lists_only_non_trump_suits_in_discards():
     t = make_table(["AH"], trump="H", discards=["3C", "4S"])
     reply = t.flip(ALICE)
-    for label in ("Clubs", "Hearts", "Spades"):
-        assert label in reply.text
-    assert "Diamonds" not in reply.text
+    prompt = reply.text.split("\n")[-1]
+    assert "Clubs" in prompt
+    assert "Spades" in prompt
+    assert "Hearts" not in prompt
+    assert "Diamonds" not in prompt
 
 
 # AC6.3
-def test_trump_flipper_naming_absent_suit_is_refused_and_lists_valid_suits():
+def test_trump_flipper_may_name_suit_absent_from_discards_and_it_is_accepted():
     t = make_table(["AH"], trump="H", discards=["3C", "4S"])
     t.flip(ALICE)
-    before = snapshot(t)
     reply = t.set_trump(ALICE, Suit.DIAMONDS)
-    assert reply.tone == "error"
-    for label in ("Clubs", "Hearts", "Spades"):
-        assert label in reply.text
-    assert snapshot(t) == before
+    assert reply.tone != "error"
+    assert t.trump is Suit.DIAMONDS
+    assert "Diamonds" in reply.text
+    assert t.pending is None
+
+
+# AC6.7
+def test_trump_prompt_with_no_other_suit_drawn_asks_gm_to_call_it():
+    t = make_table(["AH"], trump="H", discards=["2H", "KH"])
+    reply = t.flip(ALICE)
+    prompt = reply.text.split("\n")[-1]
+    assert "no other suit has been drawn yet" in prompt
+    assert "`!trump <suit>`" in prompt
+    for label in ("Clubs", "Spades", "Diamonds"):
+        assert label not in prompt
+    assert t.pending == Pending(ALICE.user_id, "choose_trump")
+
+
+def test_trump_prompt_with_no_other_suit_keeps_flippers_pending_choice_settable():
+    t = make_table(["AH"], trump="H", discards=["2H", "KH"])
+    t.flip(ALICE)
+    reply = t.set_trump(ALICE, Suit.SPADES)
+    assert reply.tone != "error"
+    assert t.trump is Suit.SPADES
+    assert t.pending is None
+
+
+def test_trump_prompt_uses_configured_prefix_when_no_other_suit_drawn():
+    t = make_table(["AH"], trump="H", discards=["2H", "KH"], prefix="?")
+    reply = t.flip(ALICE)
+    assert "`?trump <suit>`" in reply.text.split("\n")[-1]
 
 
 # AC6.4

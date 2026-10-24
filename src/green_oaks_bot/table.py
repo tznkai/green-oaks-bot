@@ -111,8 +111,9 @@ class Table:
         return card
 
     def valid_trump_choices(self) -> list[Suit]:
+        """Suits in the discards other than the current trump. A hint only: set_trump accepts any suit."""
         present = {c.suit for c in self.deck.discards}
-        return [s for s in Suit if s in present]
+        return [s for s in Suit if s in present and s is not self.trump]
 
     @staticmethod
     def _tone(outcome: Outcome) -> Tone:
@@ -128,6 +129,9 @@ class Table:
         if outcome.changes_trump:
             self.pending = Pending(actor.user_id, "choose_trump")
             suits = ", ".join(_suit_label(s) for s in self.valid_trump_choices())
+            if not suits:
+                return [(f"{actor.display_name}, no other suit has been drawn yet; "
+                         f"the GM makes the call with `{p}trump <suit>`.")]
             return [f"{actor.display_name}, choose a new trump with `{p}trump <suit>`: {suits}."]
         if outcome.grumble is GrumbleOption.REDRAW:
             self.pending = Pending(actor.user_id, "grumble_redraw")
@@ -204,13 +208,8 @@ class Table:
     def set_trump(self, actor: Actor, suit: Suit) -> Reply:
         choosing = (self.pending is not None and self.pending.kind == "choose_trump"
                     and self.pending.user_id == actor.user_id)
-        if not actor.is_gm:
-            if not choosing:
-                return self._error("Only the GM can set trump.")
-            valid = self.valid_trump_choices()
-            if suit not in valid:
-                options = ", ".join(_suit_label(s) for s in valid)
-                return self._error(f"{suit.long_name} is not in the discards. Choose one of: {options}.")
+        if not actor.is_gm and not choosing:
+            return self._error("Only the GM can set trump.")
         self.trump = suit
         if self.pending is not None and self.pending.kind == "choose_trump":
             self.pending = None
