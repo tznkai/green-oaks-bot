@@ -590,3 +590,123 @@ def test_deeply_nested_json_is_treated_as_corrupt(tmp_path: Path):
     assert notice is not None and "unreadable" in notice
     assert path.with_name(path.name + ".corrupt").is_file()
     assert len(table.deck.draw) + len(table.deck.discards) == 40
+
+
+# AC1.7: a non-creating transaction on a channel with no deck writes nothing and caches nothing
+async def test_non_creating_transact_on_missing_file_writes_nothing(tmp_path: Path):
+    store = Store(tmp_path)
+    seen: list = []
+
+    result = await store.transact(GUILD, CHANNEL, lambda t, n: seen.append((t, n)) or "done",
+                                  create=False)
+
+    assert result == "done"
+    assert seen == [(None, None)]
+    assert not store.path(GUILD, CHANNEL).exists()
+    assert not store.path(GUILD, CHANNEL).parent.exists()
+
+
+# AC1.7 (no phantom table in the cache: a later load still creates and announces the deck)
+async def test_non_creating_transact_does_not_cache_a_table(tmp_path: Path):
+    store = Store(tmp_path)
+    await store.transact(GUILD, CHANNEL, lambda t, n: None, create=False)
+
+    table, notice = store.load(GUILD, CHANNEL)
+
+    assert table is not None
+    assert notice == new_table_notice(table)
+    assert store.path(GUILD, CHANNEL).is_file()
+
+
+# AC1.7 / AC1.6: a creating transact after a non-creating one creates the deck and announces it
+async def test_creating_transact_after_non_creating_one_announces_new_deck(tmp_path: Path):
+    store = Store(tmp_path)
+    await store.transact(GUILD, CHANNEL, lambda t, n: None, create=False)
+
+    seen: list = []
+    await store.transact(GUILD, CHANNEL, lambda t, n: seen.append(n), create=True)
+
+    assert seen[0] is not None and "New deck" in seen[0]
+    assert store.path(GUILD, CHANNEL).is_file()
+
+
+# AC1.7 (an existing deck is handed to a non-creating transaction, with no notice)
+async def test_non_creating_transact_on_existing_deck_gets_the_table(tmp_path: Path):
+    store = Store(tmp_path)
+    await store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE))
+    before = state(store.load(GUILD, CHANNEL)[0])
+
+    seen: list = []
+    await store.transact(GUILD, CHANNEL, lambda t, n: seen.append((state(t), n)), create=False)
+
+    assert seen == [(before, None)]
+
+
+# AC9.4 / AC1.7: a corrupt file with a non-creating transaction is set aside, and no deck is made
+async def test_non_creating_transact_on_corrupt_file_sets_it_aside_without_a_deck(tmp_path: Path):
+    store = Store(tmp_path)
+    path = store.path(GUILD, CHANNEL)
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    seen: list = []
+    await store.transact(GUILD, CHANNEL, lambda t, n: seen.append((t, n)), create=False)
+
+    (table, notice), = seen
+    assert table is None
+    assert notice is not None and "unreadable" in notice
+    assert not path.exists()
+    assert path.with_name(path.name + ".corrupt").read_text(encoding="utf-8") == "{not json"
+
+
+# AC9.6: creating and non-creating transactions on one channel never overlap their saves
+async def test_mixed_creating_and_non_creating_saves_never_overlap(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    store.load(GUILD, CHANNEL)
+
+    events: list[str] = []
+    real_write = Store._write
+
+    def traced_write(self, path, data):
+        events.append("start")
+        time.sleep(0.001)
+        real_write(self, path, data)
+        events.append("end")
+
+    monkeypatch.setattr(Store, "_write", traced_write)
+    jobs = []
+    for i in range(20):
+        jobs.append(store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE), create=True))
+        jobs.append(store.transact(GUILD, CHANNEL, lambda t, n: t.flip(ALICE), create=False))
+    await asyncio.gather(*jobs)
+
+    assert len(events) == 2 * 40
+    assert all(e == ("start" if i % 2 == 0 else "end") for i, e in enumerate(events))
+    table = Store(tmp_path).load(GUILD, CHANNEL)[0]
+    assert len(unique_codes(table)) == 40
+
+
+# AC9.6 (cancellation during the load for a non-creating transaction still holds the lock)
+async def test_cancel_during_non_creating_load_keeps_lock_until_thread_finishes(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    real_load = store.load
+    events: list[str] = []
+
+    def slow_load(guild_id, channel_id, create=True):
+        events.append("start")
+        time.sleep(0.2)
+        result = real_load(guild_id, channel_id, create)
+        events.append("end")
+        return result
+
+    monkeypatch.setattr(store, "load", slow_load)
+    task = asyncio.create_task(store.transact(GUILD, CHANNEL, lambda t, n: None, create=False))
+    while "start" not in events:
+        await asyncio.sleep(0.001)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert events == ["start", "end"]
+    assert not store.lock(GUILD, CHANNEL).locked()
+    assert not store.path(GUILD, CHANNEL).exists()

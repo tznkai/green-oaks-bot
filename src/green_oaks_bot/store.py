@@ -24,6 +24,8 @@ _PENDING_KINDS = ("grumble_redraw", "grumble_upgrade", "choose_trump")
 _STYLES = ("emoji", "short", "long")
 _IMAGE_MODES = ("large", "small", "off")
 _MAX_ACES = 4
+UNREADABLE_RESET = "Saved state for this channel was unreadable, so a fresh deck was started."
+UNREADABLE_SET_ASIDE = "Saved state for this channel was unreadable and has been set aside."
 T = TypeVar("T")
 
 
@@ -201,7 +203,14 @@ class Store:
     def lock(self, guild_id: str, channel_id: str) -> asyncio.Lock:
         return self._locks.setdefault((guild_id, channel_id), asyncio.Lock())
 
-    def load(self, guild_id: str, channel_id: str) -> tuple[Table, str | None]:
+    def load(self, guild_id: str, channel_id: str, create: bool = True) -> tuple[Table | None, str | None]:
+        """Return the channel's table and a notice for the first command that sees it.
+
+        With `create=True` a missing deck is made, saved and announced, so the table is never None.
+        With `create=False` a missing deck gives `(None, None)`: nothing is written and nothing is
+        cached, so a later load still creates and announces it. A corrupt file is set aside either
+        way; with `create=False` no replacement is made and the notice says the state was unreadable.
+        """
         key = (guild_id, channel_id)
         if key in self._tables:
             return self._tables[key], None
@@ -214,14 +223,17 @@ class Store:
                 corrupt = self._corrupt_target(path)
                 os.replace(path, corrupt)
                 log.warning("corrupt state %s (%s); moved to %s", path, exc, corrupt)
+                if not create:
+                    return None, UNREADABLE_SET_ASIDE
                 table = Table.new(self.rng, prefix=self.prefix)
-                notice = ("Saved state for this channel was unreadable, so a fresh deck was started. "
-                          + new_table_notice(table))
+                notice = f"{UNREADABLE_RESET} {new_table_notice(table)}"
                 self.save(guild_id, channel_id, table)
-        else:
+        elif create:
             table = Table.new(self.rng, prefix=self.prefix)
             notice = new_table_notice(table)
             self.save(guild_id, channel_id, table)
+        else:
+            return None, None
         self._tables[key] = table
         return table, notice
 
@@ -255,8 +267,15 @@ class Store:
         _fsync_dir(path.parent)
 
     async def transact(self, guild_id: str, channel_id: str,
-                       fn: Callable[[Table, str | None], T]) -> T:
+                       fn: Callable[[Table | None, str | None], T], *, create: bool = True) -> T:
         """Serialise one command for a channel: load -> fn -> save.
+
+        `fn(table, notice)` runs with the channel's table. `notice` is set for the first command
+        that sees a new or reset deck, and says so.
+
+        With `create=True` (the default) a missing deck is created first, so `table` is never None.
+        With `create=False` a missing deck is not created: `fn(None, notice)` runs, nothing is
+        written and nothing is cached. `notice` is set when a corrupt file was set aside.
 
         The lock is held until every worker thread for this channel has finished, including when
         this task is cancelled, so two threads never touch the channel's file at once.
@@ -264,9 +283,11 @@ class Store:
         key = (guild_id, channel_id)
         path = self.path(guild_id, channel_id)
         async with self.lock(guild_id, channel_id):
-            load = _ThreadJob(self.load, guild_id, channel_id)
+            load = _ThreadJob(self.load, guild_id, channel_id, create)
             await load.settle()
             table, notice = load.result()
+            if table is None:
+                return fn(None, notice)
             snapshot = table_to_dict(table)
             write: _ThreadJob[None] | None = None
             try:
