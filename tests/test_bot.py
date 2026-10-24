@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import random
@@ -117,6 +118,7 @@ async def test_images_off_sends_json_without_attachment(fake, session, tmp_path,
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
 
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40000"))
     await bot.on_dispatch("MESSAGE_CREATE", event("!images off", id="40001"))
     await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
 
@@ -130,6 +132,7 @@ async def test_images_small_sends_half_size_png(fake, session, tmp_path, images)
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
 
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40000"))
     await bot.on_dispatch("MESSAGE_CREATE", event("!images small", id="40001"))
     await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
 
@@ -156,7 +159,8 @@ async def test_shuffle_by_gm_succeeds(fake, session, tmp_path, images):
     await bot.on_dispatch("MESSAGE_CREATE", event("!shuffle", roles=["r9"]))
 
     embed = messages(state)[-1].payload["embeds"][0]
-    assert "shuffles" in embed["description"]
+    assert embed["description"].count("turned up") == 1
+    assert "New deck for this channel" in embed["description"]
     assert embed["color"] == embed_colour("info")
 
 
@@ -442,12 +446,12 @@ async def test_malformed_message_id_drops_only_the_reply_reference(fake, session
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
 
-    await bot.on_dispatch("MESSAGE_CREATE", event("!status", id="../4"))
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="../4"))
 
     (sent,) = messages(state)
     assert sent.path == MESSAGES
     assert "message_reference" not in sent.payload
-    assert "Trump:" in sent.payload["embeds"][0]["description"]
+    assert "flips" in sent.payload["embeds"][0]["description"]
 
 
 # Without the Attach Files permission the card is still saved: the reply goes out text-only
@@ -480,6 +484,7 @@ async def test_403_on_json_send_is_not_resent(fake, session, tmp_path, images, c
     """Images off: a 403 on a JSON-only send is not about attachments, so nothing is retried."""
     state, api = fake
     bot = make_bot(session, api, tmp_path, images)
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40000"))
     await bot.on_dispatch("MESSAGE_CREATE", event("!images off", id="40001"))
     state.overrides[f"POST {MESSAGES}"] = Override(
         status=403, body=b'{"code":"MISSING_PERMISSIONS","message":"Missing Permissions"}'
@@ -488,11 +493,11 @@ async def test_403_on_json_send_is_not_resent(fake, session, tmp_path, images, c
     with caplog.at_level(logging.WARNING, logger="green_oaks_bot"):
         await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40002"))
 
-    command_post, error_reply = messages(state)[1:]
+    command_post, error_reply = messages(state)[2:]
     assert (command_post.content_type, command_post.status) == ("application/json", 403)
     assert "flips" in command_post.payload["embeds"][0]["description"]
     assert "Something went wrong" in error_reply.payload["embeds"][0]["description"]
-    assert len(messages(state)) == 3  # the command once, then the error reply
+    assert len(messages(state)) == 4  # two earlier replies, the command once, then the error reply
     assert not [r for r in caplog.records if "Attach Files" in r.getMessage()]
 
 
@@ -518,3 +523,113 @@ async def test_403_on_text_only_retry_falls_through_to_error_reply(
     assert "Something went wrong" in sent[-1].payload["embeds"][0]["description"]
     assert [r for r in caplog.records if r.getMessage() == "could not send error reply"]
     assert len([r for r in caplog.records if "Attach Files" in r.getMessage()]) == 1
+
+
+# AC7.5 / AC1.7 / AC1.8: commands that must not create a deck, end to end through the real Store
+
+GM_ROLES = ["r9"]
+
+
+def state_file(tmp_path: Path) -> Path:
+    return tmp_path / "data" / "guilds" / GUILD / f"{CHANNEL}.json"
+
+
+async def test_help_in_new_channel_replies_without_touching_the_store(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!help"))
+
+    (sent,) = messages(state)
+    description = sent.payload["embeds"][0]["description"]
+    assert "Green Oaks Bot commands" in description
+    assert "New deck" not in description
+    assert not state_file(tmp_path).exists()
+
+
+async def test_unknown_command_in_new_channel_writes_nothing(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!dance"))
+
+    (sent,) = messages(state)
+    assert "`!help`" in sent.payload["embeds"][0]["description"]
+    assert not state_file(tmp_path).exists()
+
+
+@pytest.mark.parametrize("line, roles", [
+    ("!status", []),
+    ("!trump", []),
+    ("!trump s", GM_ROLES),
+    ("!grumble", []),
+    ("!style short", []),
+    ("!images off", []),
+])
+async def test_non_creating_command_in_new_channel_gives_hint_and_writes_nothing(
+    fake, session, tmp_path, images, line, roles
+):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event(line, roles=roles))
+
+    (sent,) = messages(state)
+    description = sent.payload["embeds"][0]["description"]
+    assert "This channel has no deck yet" in description
+    for name in ["`!flip`", "`!adv`", "`!dis`", "`!shuffle`"]:
+        assert name in description
+    assert not state_file(tmp_path).exists()
+
+
+async def test_non_gm_shuffle_in_new_channel_is_refused_with_hint_and_writes_nothing(
+    fake, session, tmp_path, images
+):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!shuffle", roles=[]))
+
+    (sent,) = messages(state)
+    description = sent.payload["embeds"][0]["description"]
+    assert "Only the GM can shuffle." in description
+    assert "This channel has no deck yet" in description
+    assert not state_file(tmp_path).exists()
+
+
+async def test_flip_in_new_channel_creates_deck_with_notice_and_file(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip"))
+
+    description = messages(state)[-1].payload["embeds"][0]["description"]
+    assert "New deck for this channel" in description
+    assert "Alice flips" in description
+    assert state_file(tmp_path).is_file()
+
+
+async def test_gm_shuffle_in_fresh_channel_announces_once_and_creates_one_deck(
+    fake, session, tmp_path, images
+):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!shuffle", roles=GM_ROLES))
+
+    description = messages(state)[-1].payload["embeds"][0]["description"]
+    assert description.count("turned up") == 1
+    assert state_file(tmp_path).is_file()
+    saved = json.loads(state_file(tmp_path).read_text("utf-8"))
+    assert len(saved["draw"]) + len(saved["discards"]) == 40
+    assert len(saved["discards"]) == 1
+
+
+async def test_non_creating_command_after_deck_exists_still_works(fake, session, tmp_path, images):
+    state, api = fake
+    bot = make_bot(session, api, tmp_path, images)
+    await bot.on_dispatch("MESSAGE_CREATE", event("!flip", id="40001"))
+
+    await bot.on_dispatch("MESSAGE_CREATE", event("!status", id="40002"))
+
+    assert "Trump:" in messages(state)[-1].payload["embeds"][0]["description"]

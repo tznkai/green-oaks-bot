@@ -6,19 +6,27 @@ import asyncio
 import logging
 from typing import Any
 
-from green_oaks_bot.commands import Command, execute, parse
+from green_oaks_bot.commands import (
+    Command,
+    creates_deck,
+    execute,
+    no_deck,
+    parse,
+    standalone_reply,
+)
 from green_oaks_bot.fluxer.rest import FluxerHTTPError, FluxerREST, reply_to_embed
 from green_oaks_bot.fluxer.roles import GMResolver
 from green_oaks_bot.ids import is_snowflake
 from green_oaks_bot.render import CardImages
 from green_oaks_bot.store import Store
-from green_oaks_bot.table import Actor, Reply
+from green_oaks_bot.table import Actor, ImageMode, Reply, Table
 
 log = logging.getLogger("green_oaks_bot")
 
 READY_LINE = "Green Oaks bot ready"
 DM_TEXT = "Green Oaks Bot works in server channels only."
 ERROR_TEXT = "Something went wrong handling that command. The GM can check the bot's logs."
+DEFAULT_IMAGE_MODE: ImageMode = "large"  # used for replies with no table; they carry no cards
 
 
 def _needs_gm_check(cmd: Command) -> bool:
@@ -113,11 +121,22 @@ class Bot:
                 await self.rest.send_message(channel_id, reply_to_embed(Reply(DM_TEXT), False), None)
             return
         try:
+            standalone = standalone_reply(cmd, self.prefix)
+            if standalone is not None:
+                # help and unknown commands never touch the store.
+                await self._send_reply(channel_id, standalone, None, reply_to)
+                return
             user_id = author_id
             is_gm = await self.gm.is_gm(guild_id, user_id, d.get("member")) if _needs_gm_check(cmd) else False
             actor = Actor(user_id, _display_name(d), is_gm)
+
+            def run(table: Table | None, notice: str | None) -> tuple[Reply, ImageMode]:
+                if table is None:
+                    return no_deck(cmd, actor, self.prefix, notice), DEFAULT_IMAGE_MODE
+                return execute(cmd, table, actor, notice), table.images
+
             reply, mode = await self.store.transact(
-                guild_id, channel_id, lambda table, notice: (execute(cmd, table, actor, notice), table.images))
+                guild_id, channel_id, run, create=creates_deck(cmd, is_gm))
             png = await asyncio.to_thread(self.images.render, reply.cards, reply.kept_index, mode)
             await self._send_reply(channel_id, reply, png, reply_to)
         except Exception:

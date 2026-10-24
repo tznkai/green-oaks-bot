@@ -68,7 +68,46 @@ def help_text(prefix: str) -> str:
     ])
 
 
+_DECK_STARTERS = frozenset({"flip", "adv", "dis"})
+_STANDALONE = frozenset({"help"})
+
+
+def creates_deck(cmd: Command, is_gm: bool) -> bool:
+    """Whether this command may start a channel's deck when none exists yet.
+
+    Only a flip, an advantage/disadvantage flip, or a GM shuffle does. Everything else is
+    answered with `no_deck` and writes nothing.
+    """
+    return cmd.name in _DECK_STARTERS or (cmd.name == "shuffle" and is_gm)
+
+
+def standalone_reply(cmd: Command, prefix: str) -> Reply | None:
+    """The reply for `help` and unknown commands, which need no table. None for table commands."""
+    if cmd.name == "help":
+        return Reply(help_text(prefix))
+    if cmd.name in ALIASES.values():
+        return None
+    return Reply(f"Unknown command `{prefix}{cmd.name}`. Try `{prefix}help`.", tone="error")
+
+
+def no_deck(cmd: Command, actor: Actor, prefix: str, notice: str | None = None) -> Reply:
+    """The reply for a command in a channel with no deck, when the command may not start one."""
+    hint = (f"This channel has no deck yet. Start one with `{prefix}flip`, `{prefix}adv`, "
+            f"`{prefix}dis`, or `{prefix}shuffle` (GM).")
+    if cmd.name == "shuffle" and not actor.is_gm:
+        reply = Reply(f"Only the GM can shuffle. {hint}", tone="error")
+    else:
+        reply = Reply(hint)
+    if notice:
+        reply = replace(reply, text=f"{notice}\n{reply.text}")
+    return reply
+
+
 def execute(cmd: Command, table: Table, actor: Actor, notice: str | None = None) -> Reply:
+    if cmd.name == "shuffle" and actor.is_gm and notice is not None:
+        # The store has just made and shuffled this deck for this very command. The notice already
+        # announces the turned-up trump (and any reset warning), so shuffling again would be a second shuffle.
+        return table.finish(Reply(notice, (table.deck.discards[0],)))
     reply = _dispatch(cmd, table, actor)
     reply = table.finish(reply)
     if notice:

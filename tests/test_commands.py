@@ -2,7 +2,15 @@ import random
 
 import pytest
 
-from green_oaks_bot.commands import Command, execute, parse, parse_suit
+from green_oaks_bot.commands import (
+    Command,
+    creates_deck,
+    execute,
+    no_deck,
+    parse,
+    parse_suit,
+    standalone_reply,
+)
 from green_oaks_bot.deck import Card, Suit
 from green_oaks_bot.table import Table, new_table_notice
 from tests.helpers import ALICE, BOB, GM, make_table
@@ -216,3 +224,69 @@ def test_help_and_unknown_carry_shuffle_hint_when_draw_empty():
 def test_help_carries_no_hint_when_not_needed():
     table = make_table(["5S"])
     assert execute(parse("!help", "!"), table, BOB).hints == ()
+
+
+# AC7.5: help and unknown commands are answered without any table
+def test_standalone_help_and_unknown_need_no_table():
+    help_reply = standalone_reply(parse("!help", "!"), "!")
+    assert help_reply is not None and "`!flip`" in help_reply.text
+    unknown = standalone_reply(parse("!dance", "!"), "!")
+    assert unknown is not None and unknown.tone == "error" and "`!help`" in unknown.text
+
+
+def test_standalone_reply_is_none_for_table_commands():
+    assert standalone_reply(parse("!flip", "!"), "!") is None
+    assert standalone_reply(parse("!status", "!"), "!") is None
+
+
+def test_standalone_reply_uses_configured_prefix():
+    assert "`?help`" in standalone_reply(parse("?dance", "?"), "?").text
+
+
+# AC1.7 / AC1.8: which commands are allowed to start a deck
+@pytest.mark.parametrize("line, is_gm, expected", [
+    ("!flip", False, True), ("!f", False, True), ("!adv", False, True), ("!dis", False, True),
+    ("!shuffle", True, True), ("!shuffle", False, False),
+    ("!status", False, False), ("!status", True, False), ("!trump", True, False),
+    ("!trump s", True, False), ("!grumble", False, False), ("!style short", False, False),
+    ("!images off", False, False), ("!help", False, False), ("!dance", False, False),
+])
+def test_creates_deck_only_for_flip_adv_dis_and_gm_shuffle(line, is_gm, expected):
+    assert creates_deck(parse(line, "!"), is_gm) is expected
+
+
+# AC1.7: the no-deck hint names the commands that start a deck, with the configured prefix
+def test_no_deck_hint_names_starting_commands_with_custom_prefix():
+    reply = no_deck(parse("?status", "?"), ALICE, "?")
+    assert reply.tone == "info"
+    for name in ["`?flip`", "`?adv`", "`?dis`", "`?shuffle`"]:
+        assert name in reply.text
+    assert "`!" not in reply.text
+
+
+# AC1.8: a non-GM shuffle with no deck is refused and carries the hint
+def test_non_gm_shuffle_without_deck_is_refused_with_hint():
+    reply = no_deck(parse("!shuffle", "!"), ALICE, "!")
+    assert reply.tone == "error"
+    assert "Only the GM can shuffle." in reply.text
+    assert "`!flip`" in reply.text
+
+
+def test_no_deck_notice_is_prepended_when_given():
+    reply = no_deck(parse("!trump", "!"), ALICE, "!", notice="Saved state was unreadable.")
+    assert reply.text.startswith("Saved state was unreadable.\n")
+    assert "`!flip`" in reply.text
+
+
+# AC1.8: a GM shuffle in a new channel is the creation shuffle: the deck is not shuffled again
+def test_gm_shuffle_on_new_deck_announces_without_a_second_shuffle():
+    table = Table.new(random.Random(11))
+    notice = new_table_notice(table)
+    before = (table.deck.draw_codes(), table.deck.discard_codes(), table.trump)
+
+    reply = execute(parse("!shuffle", "!"), table, GM, notice=notice)
+
+    assert (table.deck.draw_codes(), table.deck.discard_codes(), table.trump) == before
+    assert reply.text == notice
+    assert reply.text.count("turned up") == 1
+    assert reply.cards == (table.deck.discards[0],)
