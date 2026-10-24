@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from green_oaks_bot.config import ConfigError, Config
+from green_oaks_bot.config import Config, ConfigError
 
 BASE = {"FLUXER_TOKEN": "tok", "FLUXER_INSTANCE_URL": "https://fluxer.example"}
 
