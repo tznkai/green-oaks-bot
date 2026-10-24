@@ -49,7 +49,7 @@ def parse(text: str, prefix: str) -> Command | None:
 
 
 def parse_suit(token: str) -> Suit | None:
-    return _SUIT_WORDS.get(token.strip().replace("️", "").lower())
+    return _SUIT_WORDS.get(token.strip().replace("\ufe0f", "").lower())
 
 
 def help_text(prefix: str) -> str:

@@ -79,7 +79,7 @@ def test_table_with_custom_prefix_uses_it_in_help_unknown_and_shuffle_hint():
     ("clubs", Suit.CLUBS), ("club", Suit.CLUBS), ("C", Suit.CLUBS), ("c", Suit.CLUBS),
     ("♣", Suit.CLUBS), ("♧", Suit.CLUBS),
     ("Hearts", Suit.HEARTS), ("HEARTS", Suit.HEARTS), ("h", Suit.HEARTS), ("♥", Suit.HEARTS),
-    ("♡", Suit.HEARTS), ("♥️", Suit.HEARTS),
+    ("♡", Suit.HEARTS), ("♥\ufe0f", Suit.HEARTS),
     ("spade", Suit.SPADES), ("♠", Suit.SPADES), ("♤", Suit.SPADES), ("s", Suit.SPADES),
     ("d", Suit.DIAMONDS), ("♦", Suit.DIAMONDS),
 ])
@@ -90,6 +90,14 @@ def test_parse_suit_accepts_names_initials_and_symbols(token, suit):
 @pytest.mark.parametrize("token", ["x", "stars", ""])
 def test_parse_suit_rejects_unknown_tokens(token):
     assert parse_suit(token) is None
+
+
+def test_heart_with_variation_selector_token_contains_fe0f():
+    # Guard: ensures the "\ufe0f" case really carries the selector, so the
+    # strip in parse_suit is what is being exercised.
+    token = "\u2665\ufe0f"
+    assert len(token) == 2 and "\ufe0f" in token
+    assert parse_suit(token) is Suit.HEARTS
 
 
 def test_trump_with_invalid_suit_lists_options_and_leaves_trump_unchanged():
