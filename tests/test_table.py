@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from green_oaks_bot.deck import Card, Deck, Rank, Suit
+from green_oaks_bot.deck import Card, Rank, Suit
 from green_oaks_bot.rules import describe, resolve
 from green_oaks_bot.table import Pending, Table, new_table_notice
 from tests.helpers import ALICE, BOB, GM, make_table
