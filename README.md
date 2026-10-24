@@ -23,13 +23,15 @@ This project is split into two licensed parts, so that the engine can be reused 
   says "4.0 IT": there is no ported 4.0 version of this licence, so the IT refers to the Italian-language legal code
   and this is the international 4.0 licence.
 - **The card images** (`assets/cards/`) are public domain, by Byron Knoll (see `LICENSES/LicenseRef-PublicDomain-vector-playing-cards.txt`
-  and `assets/cards/ATTRIBUTION.md`). One centre pip on `ace_of_spades.png` was replaced by a copy from another of his images.
+  and `assets/cards/ATTRIBUTION.md`). They are not part of the Python package. One centre pip on `ace_of_spades.png` was
+  replaced by a copy of a pip from another of his images, and needs no separate licence.
 
 **The non-commercial restriction applies to any distribution that includes the rules file.** The engine's AGPL terms
 do not remove the CC BY-NC-SA 4.0 terms on the rules file. A copy of this project that contains the rules file may be
 shared and changed only non-commercially, under share-alike terms; a copy built without it (the engine alone, with its
 own rules file written from scratch) is under the AGPL alone. The Python package's `license` field records the combined
-expression, `AGPL-3.0-or-later AND CC-BY-NC-SA-4.0 AND LicenseRef-PublicDomain-vector-playing-cards`.
+expression, `AGPL-3.0-or-later AND CC-BY-NC-SA-4.0`. The wheel carries the two licence texts that apply to its contents;
+the public-domain card images are not in the wheel.
 
 ### Attribution: *Green Oaks* (MS Edizioni)
 
