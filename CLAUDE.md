@@ -74,6 +74,8 @@ Imperative shell:
 
 - Do not read or print `.env` (holds `FLUXER_TOKEN`); `.env.example` is the template.
 - `RULES_FILE` may point at another TOML of the same structure; startup rejects malformed files.
-- The egg (`egg-green-oaks-bot.json`) validation rules must match `config.py` (e.g. `SOURCE_URL`).
+- The egg (`egg-green-oaks-bot.json`) validation rules must match `config.py` (e.g. `SOURCE_URL`), and
+  the egg must pass the panel's model validation (`tests/test_egg.py`): e.g. `author` must be an email
+  address, or import fails with a bare HTTP 500.
 - This directory is published as https://github.com/tznkai/green-oaks-bot (git subtree split);
   everything here is public.

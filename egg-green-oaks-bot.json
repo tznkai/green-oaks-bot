@@ -6,7 +6,7 @@
     },
     "exported_at": "2026-10-24T00:00:00+00:00",
     "name": "Green Oaks Bot",
-    "author": "K. Chen",
+    "author": "tznkai@gmail.com",
     "description": "Fluxer bot for Green Oaks ArterioscleroSys card checks: one shared 40-card deck per channel.",
     "features": null,
     "docker_images": {
