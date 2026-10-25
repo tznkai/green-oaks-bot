@@ -74,7 +74,7 @@ State lives in `./data`. The container runs as 1000:1000 unless you set `UID` an
     .venv/bin/ruff check src tests tools
     .venv/bin/reuse --root . lint
 
-Run these from `green-oaks-bot/`. The `dev` extra installs pytest, ruff and reuse; CI runs the same four commands.
+Run these from `green-oaks-bot/`. The `dev` extra installs pytest, ruff and reuse; CI runs the same three checks (pytest, ruff, reuse).
 
 ## Smoke-test checklist
 
