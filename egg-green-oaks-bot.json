@@ -1,0 +1,122 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-10-24T00:00:00+00:00",
+    "name": "Green Oaks Bot",
+    "author": "K. Chen",
+    "description": "Fluxer bot for Green Oaks ArterioscleroSys card checks: one shared 40-card deck per channel.",
+    "features": null,
+    "docker_images": {
+        "Green Oaks Bot": "ghcr.io/tznkai/green-oaks-bot:latest"
+    },
+    "file_denylist": [],
+    "startup": "python -m green_oaks_bot",
+    "config": {
+        "files": "{}",
+        "startup": "{\"done\": \"Green Oaks bot ready\"}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# The image already contains the bot; nothing to install.\nmkdir -p /mnt/server/data\nexit 0\n",
+            "container": "debian:bookworm-slim",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Fluxer bot token",
+            "description": "Bot token from your Fluxer instance (<application_id>.<secret>). Hidden from server users.",
+            "env_variable": "FLUXER_TOKEN",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|string|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "Fluxer instance URL",
+            "description": "Base URL of your Fluxer instance, e.g. https://chat.example.org. The API is discovered from /.well-known/fluxer.",
+            "env_variable": "FLUXER_INSTANCE_URL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "API URL override",
+            "description": "Optional. Fluxer public API base (without /v1). Overrides discovery.",
+            "env_variable": "FLUXER_API_URL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Gateway URL override",
+            "description": "Optional. Fluxer gateway websocket URL. Overrides GET /v1/gateway/bot.",
+            "env_variable": "FLUXER_GATEWAY_URL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "GM role name",
+            "description": "Members with a role of this name (case-insensitive) can shuffle and set trump.",
+            "env_variable": "GM_ROLE_NAME",
+            "default_value": "GM",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:100",
+            "field_type": "text"
+        },
+        {
+            "name": "Command prefix",
+            "description": "Prefix for bot commands, e.g. ! for !flip.",
+            "env_variable": "COMMAND_PREFIX",
+            "default_value": "!",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:8",
+            "field_type": "text"
+        },
+        {
+            "name": "Log level",
+            "description": "DEBUG, INFO, WARNING or ERROR.",
+            "env_variable": "LOG_LEVEL",
+            "default_value": "INFO",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:DEBUG,INFO,WARNING,ERROR",
+            "field_type": "text"
+        },
+        {
+            "name": "Source URL",
+            "description": "Where users can get the bot's source code (AGPL-3.0 network-use offer). Shown in !help. Set this to your fork if you modify the bot.",
+            "env_variable": "SOURCE_URL",
+            "default_value": "https://github.com/tznkai/green-oaks-bot",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Rules file override",
+            "description": "Optional. Path to a rules data file. Leave blank to use the rules file packaged in the image.",
+            "env_variable": "RULES_FILE",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        }
+    ]
+}

@@ -35,6 +35,7 @@ path = [
     "pyproject.toml",
     ".gitignore",
     ".dockerignore",
+    "egg-green-oaks-bot.json",
 ]
 SPDX-FileCopyrightText = "2026 K. Chen"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
