@@ -203,7 +203,8 @@ def test_scan_skips_files_that_do_not_decode_as_utf8_and_pruned_dirs(tmp_path):
     assert {p.name for p in scanned_files(tmp_path)} == {"good.md"}
 
 
-SECRET_FILES = [".env", ".env.local", ".env.production"]
+# The last two have allowlisted suffixes, so only the denylist keeps them out of the scan.
+SECRET_FILES = [".env", ".env.local", ".env.production", ".env.production.json", ".env.local.toml"]
 
 
 def test_secret_files_are_never_opened_or_scanned(tmp_path, monkeypatch):
