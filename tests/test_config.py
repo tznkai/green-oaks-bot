@@ -54,6 +54,20 @@ def test_prefix_override():
     assert cfg.prefix == "?"
 
 
+@pytest.mark.parametrize("raw", ["! ", " ! ", "!\t"])
+def test_prefix_surrounding_whitespace_is_stripped(raw):
+    cfg = Config.from_env({**BASE, "COMMAND_PREFIX": raw})
+
+    assert cfg.prefix == "!"
+
+
+@pytest.mark.parametrize("raw", ["  ", "\t", " "])
+def test_blank_prefix_falls_back_to_default(raw):
+    cfg = Config.from_env({**BASE, "COMMAND_PREFIX": raw})
+
+    assert cfg.prefix == "!"
+
+
 def test_gm_role_name_is_preserved():
     cfg = Config.from_env({**BASE, "GM_ROLE_NAME": "Game Master"})
 
@@ -88,6 +102,15 @@ def test_api_and_gateway_overrides_are_read():
 def test_missing_token_raises():
     with pytest.raises(ConfigError):
         Config.from_env({"FLUXER_INSTANCE_URL": "https://fluxer.example"})
+
+
+def test_token_is_not_exposed_by_repr_or_str():
+    secret = "SENTINEL-TOKEN-7f3a9c"
+    cfg = Config.from_env({**BASE, "FLUXER_TOKEN": secret})
+
+    assert cfg.token == secret
+    assert secret not in repr(cfg)
+    assert secret not in str(cfg)
 
 
 def test_blank_token_raises():

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -36,7 +36,7 @@ def _source_url(env: Mapping[str, str]) -> str:
 
 @dataclass(frozen=True)
 class Config:
-    token: str
+    token: str = field(repr=False)
     instance_url: str | None
     api_url: str | None
     gateway_url: str | None
@@ -61,7 +61,7 @@ class Config:
         log_level = (_opt(env, "LOG_LEVEL") or "INFO").upper()
         if log_level not in LOG_LEVELS:
             raise ConfigError(f"LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}")
-        prefix = env.get("COMMAND_PREFIX", "")
+        prefix = env.get("COMMAND_PREFIX", "").strip() or "!"
         source_url = _source_url(env)
         return cls(
             token=token,
@@ -69,7 +69,7 @@ class Config:
             api_url=api_url,
             gateway_url=_opt(env, "FLUXER_GATEWAY_URL"),
             gm_role_name=_opt(env, "GM_ROLE_NAME") or "GM",
-            prefix=prefix if prefix.strip() else "!",
+            prefix=prefix,
             data_dir=Path(_opt(env, "DATA_DIR") or "data"),
             assets_dir=Path(_opt(env, "CARD_ASSETS_DIR") or DEFAULT_ASSETS_DIR),
             log_level=log_level,
