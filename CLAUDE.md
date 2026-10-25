@@ -22,7 +22,8 @@ User-facing docs (commands, config, deploy) are in `README.md`; Fluxer API notes
   `src/green_oaks_bot/rulesets/green_oaks.toml`: CC BY-NC-SA 4.0. Card art `assets/cards/`: public domain.
 - All rules expressions (card results, points terms, keywords, game half of `!help`, redraw/prompt
   lines) live ONLY in the TOML. Never restate them in Python, tests, tools, README or this file;
-  refer to the rules file instead. `tests/test_licensing_boundary.py` scans `src/`, `tests/`, `tools/`
+  refer to the rules file instead. `tests/test_licensing_boundary.py` scans every published text file in
+  the project (README, this file, docs, build files, `src/`, `tests/`, `tools/`; excludes the TOML and `LICENSES/`)
   for the TOML's terms and fails on any match (it builds samples from the TOML at run time).
 - Every new file needs an SPDX header or a `REUSE.toml` entry, or `reuse lint` fails.
 
