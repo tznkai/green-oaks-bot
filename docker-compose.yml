@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 K. Chen
+# SPDX-License-Identifier: AGPL-3.0-or-later
+services:
+  green-oaks-bot:
+    build: .
+    image: ghcr.io/tznkai/green-oaks-bot:latest
+    restart: unless-stopped
+    env_file: .env
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./data:/home/container/data
