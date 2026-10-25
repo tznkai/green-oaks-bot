@@ -61,17 +61,20 @@ Set `RULES_FILE` only to load a different rules file. It must have the same stru
 
     cp .env.example .env
     # fill in .env, then:
+    mkdir -p data
     docker compose up -d --build
 
-State lives in `./data`. The container runs as your UID and GID (default 1000), so `./data` must be writable by that user.
+State lives in `./data`. The container runs as 1000:1000 unless you set `UID` and `GID` in `.env` (for example to the output of `id -u` and `id -g`). Compose reads `.env` for this, so the values must go there, not in your shell. `./data` must be writable by that uid, which is why the `mkdir -p data` step matters: if Docker creates `./data` itself, it is owned by root and the bot cannot save state.
 
 ## Development
 
     uv venv --python 3.12 .venv
     uv pip install --python .venv/bin/python -e '.[dev]'
-    .venv/bin/python -m pytest
+    .venv/bin/python -m pytest -q -W error
+    .venv/bin/ruff check src tests tools
+    .venv/bin/reuse --root . lint
 
-Run these from `green-oaks-bot/`. To check the licence headers, run `uvx reuse --root . lint` from the same folder.
+Run these from `green-oaks-bot/`. The `dev` extra installs pytest, ruff and reuse; CI runs the same four commands.
 
 ## Smoke-test checklist
 
