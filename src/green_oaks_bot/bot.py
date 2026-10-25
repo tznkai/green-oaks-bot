@@ -49,12 +49,13 @@ def _display_name(d: dict[str, Any]) -> str:
 
 class Bot:
     def __init__(self, *, rest: FluxerREST, store: Store, images: CardImages,
-                 gm: GMResolver, prefix: str, ruleset: Ruleset) -> None:
+                 gm: GMResolver, prefix: str, ruleset: Ruleset, source_url: str) -> None:
         if store.ruleset is not ruleset:
             # The help text and the table's prompts must come from the same rules file.
             raise ValueError("Bot and Store must be given the same Ruleset")
         self.rest = rest
         self.ruleset = ruleset
+        self.source_url = source_url
         self.store = store
         self.images = images
         self.gm = gm
@@ -128,7 +129,7 @@ class Bot:
                 await self.rest.send_message(channel_id, reply_to_embed(Reply(DM_TEXT), False), None)
             return
         try:
-            standalone = standalone_reply(cmd, self.prefix, self.ruleset)
+            standalone = standalone_reply(cmd, self.prefix, self.ruleset, self.source_url)
             if standalone is not None:
                 # help and unknown commands never touch the store.
                 await self._send_reply(channel_id, standalone, None, reply_to)
@@ -140,7 +141,7 @@ class Bot:
             def run(table: Table | None, notice: str | None) -> tuple[Reply, ImageMode]:
                 if table is None:
                     return no_deck(cmd, actor, self.prefix, notice), DEFAULT_IMAGE_MODE
-                return execute(cmd, table, actor, notice), table.images
+                return execute(cmd, table, actor, self.source_url, notice), table.images
 
             reply, mode = await self.store.transact(
                 guild_id, channel_id, run, create=creates_deck(cmd, is_gm))

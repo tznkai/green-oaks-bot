@@ -117,3 +117,33 @@ def test_rules_file_defaults_to_the_packaged_file_and_can_be_overridden():
     base = {"FLUXER_TOKEN": "x.y", "FLUXER_INSTANCE_URL": "https://fluxer.test"}
     assert Config.from_env(base).rules_file == DEFAULT_RULES_FILE
     assert Config.from_env({**base, "RULES_FILE": "/srv/rules.toml"}).rules_file == Path("/srv/rules.toml")
+
+
+def test_source_url_defaults_to_the_public_repository():
+    from green_oaks_bot.config import DEFAULT_SOURCE_URL
+
+    assert DEFAULT_SOURCE_URL == "https://github.com/tznkai/green-oaks-bot"
+    assert Config.from_env(dict(BASE)).source_url == "https://github.com/tznkai/green-oaks-bot"
+
+
+def test_source_url_override_is_read():
+    cfg = Config.from_env({**BASE, "SOURCE_URL": "https://git.example.org/fork"})
+
+    assert cfg.source_url == "https://git.example.org/fork"
+
+
+def test_blank_source_url_counts_as_unset():
+    cfg = Config.from_env({**BASE, "SOURCE_URL": "   "})
+
+    assert cfg.source_url == "https://github.com/tznkai/green-oaks-bot"
+
+
+@pytest.mark.parametrize("url", [
+    "ftp://git.example.org/fork",
+    "github.com/tznkai/green-oaks-bot",
+    "https://",
+    "https://git.example.org/a b",
+])
+def test_source_url_must_be_an_http_or_https_url(url):
+    with pytest.raises(ConfigError, match="SOURCE_URL"):
+        Config.from_env({**BASE, "SOURCE_URL": url})

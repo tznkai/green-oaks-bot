@@ -8,7 +8,7 @@ from __future__ import annotations
 from green_oaks_bot.commands import help_text
 from green_oaks_bot.deck import Card
 from green_oaks_bot.rules import describe, resolve
-from tests.helpers import ALICE, BOB, default_ruleset, make_table
+from tests.helpers import ALICE, BOB, SOURCE_URL, default_ruleset, make_table
 
 RULESET = default_ruleset()
 L = RULESET.labels
@@ -24,7 +24,7 @@ def result(code: str, trump: str) -> str:
 
 
 def test_help_text_is_unchanged():
-    assert help_text("!", RULESET) == "\n".join([
+    assert help_text("!", RULESET, SOURCE_URL) == "\n".join([
         "**Green Oaks Bot commands**",
         "`!flip` (`!f`): flip a card and resolve it against trump",
         "`!adv` / `!dis`: flip two, keep the better / worse result",
@@ -37,11 +37,17 @@ def test_help_text_is_unchanged():
         "`!images large|small|off`: card image size",
         "`!help`: this list",
         "Rules adapted from Green Oaks © MS Edizioni / Magic Store srl, CC BY-NC-SA 4.0 https://creativecommons.org/licenses/by-nc-sa/4.0/. See the README, Licensing.",
+        f"Source: {SOURCE_URL} (AGPL-3.0-or-later)",
     ])
 
 
+def test_help_text_ends_with_the_source_line_it_is_given():
+    assert help_text("!", RULESET, "https://fork.example/bot").splitlines()[-1] == (
+        "Source: https://fork.example/bot (AGPL-3.0-or-later)")
+
+
 def test_help_text_uses_the_prefix():
-    assert help_text("?", RULESET).splitlines()[1] == "`?flip` (`?f`): flip a card and resolve it against trump"
+    assert help_text("?", RULESET, SOURCE_URL).splitlines()[1] == "`?flip` (`?f`): flip a card and resolve it against trump"
 
 
 def test_replace_prompt():

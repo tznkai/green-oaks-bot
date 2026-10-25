@@ -55,8 +55,9 @@ def parse_suit(token: str) -> Suit | None:
     return _SUIT_WORDS.get(token.strip().replace("\ufe0f", "").lower())
 
 
-def help_text(prefix: str, ruleset: Ruleset) -> str:
-    """The rules file's title and game lines, then the engine's own commands, then the rules credit."""
+def help_text(prefix: str, ruleset: Ruleset, source_url: str) -> str:
+    """The rules file's title and game lines, then the engine's own commands, then the rules credit
+    and the engine's source line (AGPL-3.0 network-use offer)."""
     p = prefix
     rules = ruleset
     game = rules.help
@@ -68,6 +69,7 @@ def help_text(prefix: str, ruleset: Ruleset) -> str:
         f"`{p}images large|small|off`: card image size",
         f"`{p}help`: this list",
         rules.text(game.credit, p),
+        f"Source: {source_url} (AGPL-3.0-or-later)",
     ])
 
 
@@ -84,10 +86,10 @@ def creates_deck(cmd: Command, is_gm: bool) -> bool:
     return cmd.name in _DECK_STARTERS or (cmd.name == "shuffle" and is_gm)
 
 
-def standalone_reply(cmd: Command, prefix: str, ruleset: Ruleset) -> Reply | None:
+def standalone_reply(cmd: Command, prefix: str, ruleset: Ruleset, source_url: str) -> Reply | None:
     """The reply for `help` and unknown commands, which need no table. None for table commands."""
     if cmd.name == "help":
-        return Reply(help_text(prefix, ruleset))
+        return Reply(help_text(prefix, ruleset, source_url))
     if cmd.name in ALIASES.values():
         return None
     return Reply(f"Unknown command `{prefix}{cmd.name}`. Try `{prefix}help`.", tone="error")
@@ -106,19 +108,20 @@ def no_deck(cmd: Command, actor: Actor, prefix: str, notice: str | None = None) 
     return reply
 
 
-def execute(cmd: Command, table: Table, actor: Actor, notice: str | None = None) -> Reply:
+def execute(cmd: Command, table: Table, actor: Actor, source_url: str,
+            notice: str | None = None) -> Reply:
     if cmd.name == "shuffle" and actor.is_gm and notice is not None:
         # The store has just made and shuffled this deck for this very command. The notice already
         # announces the turned-up trump (and any reset warning), so shuffling again would be a second shuffle.
         return table.finish(Reply(notice, (table.deck.discards[0],)))
-    reply = _dispatch(cmd, table, actor)
+    reply = _dispatch(cmd, table, actor, source_url)
     reply = table.finish(reply)
     if notice:
         reply = replace(reply, text=f"{notice}\n{reply.text}")
     return reply
 
 
-def _dispatch(cmd: Command, table: Table, actor: Actor) -> Reply:
+def _dispatch(cmd: Command, table: Table, actor: Actor, source_url: str) -> Reply:
     p = table.prefix
     match cmd.name:
         case "flip":
@@ -151,6 +154,6 @@ def _dispatch(cmd: Command, table: Table, actor: Actor) -> Reply:
                 return Reply(f"Usage: `{p}images {'|'.join(IMAGE_MODES)}`", tone="error")
             return table.set_images(actor, value)
         case "help":
-            return Reply(help_text(p, table.ruleset))
+            return Reply(help_text(p, table.ruleset, source_url))
         case _:
             return Reply(f"Unknown command `{p}{cmd.name}`. Try `{p}help`.", tone="error")

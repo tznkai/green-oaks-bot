@@ -20,7 +20,15 @@ from green_oaks_bot.deck import Suit
 from green_oaks_bot.rules import describe, resolve
 from green_oaks_bot.ruleset import Ruleset
 from green_oaks_bot.store import Store
-from tests.helpers import ALICE, BOB, CUSTOM_TITLE, RULESET, custom_ruleset, make_table
+from tests.helpers import (
+    ALICE,
+    BOB,
+    CUSTOM_TITLE,
+    RULESET,
+    SOURCE_URL,
+    custom_ruleset,
+    make_table,
+)
 
 GUILD, CHANNEL = "111", "222"
 
@@ -115,13 +123,13 @@ async def test_store_rebuilds_a_corrupt_file_with_the_custom_ruleset(tmp_path: P
 
 
 def test_standalone_help_shows_the_custom_help(custom: Ruleset):
-    reply = standalone_reply(parse("!help", "!"), "!", custom)
+    reply = standalone_reply(parse("!help", "!"), "!", custom, SOURCE_URL)
     assert reply is not None
     assert reply.text.splitlines()[0] == CUSTOM_TITLE
-    assert reply.text == help_text("!", custom)
+    assert reply.text == help_text("!", custom, SOURCE_URL)
     assert "**Green Oaks Bot commands**" not in reply.text
 
 
 def test_help_text_is_built_from_the_ruleset_it_is_given(custom: Ruleset):
-    assert help_text("!", custom).splitlines()[0] == CUSTOM_TITLE
-    assert help_text("!", RULESET).splitlines()[0] != CUSTOM_TITLE
+    assert help_text("!", custom, SOURCE_URL).splitlines()[0] == CUSTOM_TITLE
+    assert help_text("!", RULESET, SOURCE_URL).splitlines()[0] != CUSTOM_TITLE

@@ -39,7 +39,8 @@ async def run(config: Config, images: CardImages, ruleset: Ruleset) -> None:
         rest = FluxerREST(session, api, config.token)
         store = Store(config.data_dir, prefix=config.prefix, ruleset=ruleset)
         bot = Bot(rest=rest, store=store, images=images,
-                  gm=GMResolver(rest, config.gm_role_name), prefix=config.prefix, ruleset=ruleset)
+                  gm=GMResolver(rest, config.gm_role_name), prefix=config.prefix, ruleset=ruleset,
+                  source_url=config.source_url)
         gateway = Gateway(session, gateway_url, config.token, bot.on_dispatch, on_ready=bot.on_ready)
         gw_task = asyncio.create_task(gateway.run())
         stop_task = asyncio.create_task(stop.wait())

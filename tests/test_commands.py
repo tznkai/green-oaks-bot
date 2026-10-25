@@ -15,7 +15,7 @@ from green_oaks_bot.commands import (
 )
 from green_oaks_bot.deck import Card, Suit
 from green_oaks_bot.table import Table, new_table_notice
-from tests.helpers import ALICE, BOB, GM, RULESET, make_table
+from tests.helpers import ALICE, BOB, GM, RULESET, SOURCE_URL, make_table
 
 
 def card(code: str) -> Card:
@@ -49,13 +49,13 @@ def test_parse_tolerates_surrounding_whitespace_and_splits_args():
 
 
 def test_unknown_command_gets_help_hint():
-    reply = execute(parse("!dance", "!"), make_table([]), ALICE)
+    reply = execute(parse("!dance", "!"), make_table([]), ALICE, SOURCE_URL)
     assert reply.tone == "error"
     assert "`!help`" in reply.text
 
 
 def test_help_lists_every_command():
-    reply = execute(parse("!help", "!"), make_table(["5S"]), ALICE)
+    reply = execute(parse("!help", "!"), make_table(["5S"]), ALICE, SOURCE_URL)
     for name in ["flip", "adv", "dis", "grumble", "trump", "shuffle", "status", "style",
                  "images", "help"]:
         assert f"`!{name}" in reply.text, name
@@ -64,10 +64,15 @@ def test_help_lists_every_command():
 def test_help_ends_with_rules_attribution_line():
     # CC BY-NC-SA 4.0 s.3(a)(1): the credit names the publisher, the licence with its URI, and that
     # the material is adapted. The credit is the rules file's, so it names no game terms here.
-    lines = execute(parse("!help", "!"), make_table(["5S"]), ALICE).text.splitlines()
-    assert lines[-1].startswith("Rules adapted from Green Oaks")
-    assert "MS Edizioni" in lines[-1]
-    assert "CC BY-NC-SA 4.0 https://creativecommons.org/licenses/by-nc-sa/4.0/." in lines[-1]
+    lines = execute(parse("!help", "!"), make_table(["5S"]), ALICE, SOURCE_URL).text.splitlines()
+    assert lines[-2].startswith("Rules adapted from Green Oaks")
+    assert "MS Edizioni" in lines[-2]
+    assert "CC BY-NC-SA 4.0 https://creativecommons.org/licenses/by-nc-sa/4.0/." in lines[-2]
+
+
+def test_help_ends_with_the_engine_source_line():
+    lines = execute(parse("!help", "!"), make_table(["5S"]), ALICE, SOURCE_URL).text.splitlines()
+    assert lines[-1] == f"Source: {SOURCE_URL} (AGPL-3.0-or-later)"
 
 
 # AC7.6: configurable prefix
@@ -83,12 +88,12 @@ def test_prefix_is_configurable_multi_character():
 
 def test_table_with_custom_prefix_uses_it_in_help_unknown_and_shuffle_hint():
     table = make_table([], prefix="?")
-    help_reply = execute(parse("?help", "?"), table, ALICE)
+    help_reply = execute(parse("?help", "?"), table, ALICE, SOURCE_URL)
     assert "`?flip`" in help_reply.text
     assert "`!flip`" not in help_reply.text
     assert "GM: time to `?shuffle`" in help_reply.hints
 
-    unknown = execute(parse("?dance", "?"), table, ALICE)
+    unknown = execute(parse("?dance", "?"), table, ALICE, SOURCE_URL)
     assert "`?help`" in unknown.text
     assert "GM: time to `?shuffle`" in unknown.hints
 
@@ -121,7 +126,7 @@ def test_heart_with_variation_selector_token_contains_fe0f():
 
 def test_trump_with_invalid_suit_lists_options_and_leaves_trump_unchanged():
     table = make_table(["5S"], trump="H")
-    reply = execute(parse("!trump stars", "!"), table, GM)
+    reply = execute(parse("!trump stars", "!"), table, GM, SOURCE_URL)
     assert reply.tone == "error"
     assert "clubs, diamonds, hearts, spades" in reply.text
     assert table.trump is Suit.HEARTS
@@ -129,15 +134,15 @@ def test_trump_with_invalid_suit_lists_options_and_leaves_trump_unchanged():
 
 def test_trump_with_initial_sets_suit_for_gm():
     table = make_table(["5S"], trump="H")
-    execute(parse("!trump s", "!"), table, GM)
+    execute(parse("!trump s", "!"), table, GM, SOURCE_URL)
     assert table.trump is Suit.SPADES
 
 
 # AC7.4: settings
 def test_style_and_images_change_channel_settings():
     table = make_table(["5S"])
-    execute(parse("!style short", "!"), table, ALICE)
-    execute(parse("!images small", "!"), table, ALICE)
+    execute(parse("!style short", "!"), table, ALICE, SOURCE_URL)
+    execute(parse("!images small", "!"), table, ALICE, SOURCE_URL)
     assert table.style == "short"
     assert table.images == "small"
 
@@ -145,7 +150,7 @@ def test_style_and_images_change_channel_settings():
 @pytest.mark.parametrize("line", ["!style fancy", "!style"])
 def test_invalid_style_is_error_listing_options_and_setting_unchanged(line):
     table = make_table(["5S"])
-    reply = execute(parse(line, "!"), table, ALICE)
+    reply = execute(parse(line, "!"), table, ALICE, SOURCE_URL)
     assert reply.tone == "error"
     assert "emoji|short|long" in reply.text
     assert table.style == "long"
@@ -153,7 +158,7 @@ def test_invalid_style_is_error_listing_options_and_setting_unchanged(line):
 
 def test_invalid_images_is_error_listing_options_and_setting_unchanged():
     table = make_table(["5S"])
-    reply = execute(parse("!images huge", "!"), table, ALICE)
+    reply = execute(parse("!images huge", "!"), table, ALICE, SOURCE_URL)
     assert reply.tone == "error"
     assert "large|small|off" in reply.text
     assert table.images == "large"
@@ -161,58 +166,58 @@ def test_invalid_images_is_error_listing_options_and_setting_unchanged():
 
 # Routing: each command reaches the matching Table method
 def test_bare_trump_shows_current_trump():
-    reply = execute(parse("!trump", "!"), make_table(["5S"], trump="H"), ALICE)
+    reply = execute(parse("!trump", "!"), make_table(["5S"], trump="H"), ALICE, SOURCE_URL)
     assert "Hearts" in reply.text
     assert reply.tone == "info"
 
 
 def test_adv_routes_to_advantage_and_keeps_higher():
     table = make_table(["5S", "KH"], trump="H")
-    reply = execute(parse("!adv", "!"), table, ALICE)
+    reply = execute(parse("!adv", "!"), table, ALICE, SOURCE_URL)
     assert reply.cards == (card("5S"), card("KH"))
     assert reply.kept_index == 1
 
 
 def test_dis_routes_to_disadvantage_and_keeps_lower():
     table = make_table(["5S", "KH"], trump="H")
-    reply = execute(parse("!dis", "!"), table, ALICE)
+    reply = execute(parse("!dis", "!"), table, ALICE, SOURCE_URL)
     assert reply.cards == (card("5S"), card("KH"))
     assert reply.kept_index == 0
 
 
 def test_grumble_routes_to_grumble_redraw():
     table = make_table(["5S", "KH"], trump="H")
-    execute(parse("!flip", "!"), table, ALICE)
-    reply = execute(parse("!grumble", "!"), table, ALICE)
+    execute(parse("!flip", "!"), table, ALICE, SOURCE_URL)
+    reply = execute(parse("!grumble", "!"), table, ALICE, SOURCE_URL)
     assert reply.cards == (card("KH"),)
 
 
 def test_shuffle_routes_to_table_and_gm_only_is_enforced_there():
     table = make_table(["5S"], trump="H")
-    refused = execute(parse("!shuffle", "!"), table, ALICE)
+    refused = execute(parse("!shuffle", "!"), table, ALICE, SOURCE_URL)
     assert refused.tone == "error"
     assert refused.cards == ()
 
-    done = execute(parse("!shuffle", "!"), table, GM)
+    done = execute(parse("!shuffle", "!"), table, GM, SOURCE_URL)
     assert "shuffles" in done.text
     assert len(done.cards) == 1
 
 
 def test_status_routes_to_table_status():
     table = make_table(["5S", "KH"], trump="H")
-    reply = execute(parse("!status", "!"), table, ALICE)
+    reply = execute(parse("!status", "!"), table, ALICE, SOURCE_URL)
     assert "Draw: 2" in reply.text
     assert "Discards: 38" in reply.text
 
 
 # AC1.6: first-command notice is prepended
 def test_notice_is_prepended_as_its_own_line():
-    reply = execute(parse("!status", "!"), make_table(["5S"]), ALICE, notice="N")
+    reply = execute(parse("!status", "!"), make_table(["5S"]), ALICE, SOURCE_URL, notice="N")
     assert reply.text.startswith("N\n")
 
 
 def test_no_notice_leaves_text_unprefixed():
-    reply = execute(parse("!status", "!"), make_table(["5S"]), ALICE)
+    reply = execute(parse("!status", "!"), make_table(["5S"]), ALICE, SOURCE_URL)
     assert not reply.text.startswith("\n")
     assert reply.text.startswith("Trump:")
 
@@ -220,7 +225,7 @@ def test_no_notice_leaves_text_unprefixed():
 def test_new_table_notice_comes_first_on_first_command_in_new_channel():
     table = Table.new(random.Random(7), ruleset=RULESET)
     notice = new_table_notice(table)
-    reply = execute(parse("!status", "!"), table, ALICE, notice=new_table_notice(table))
+    reply = execute(parse("!status", "!"), table, ALICE, SOURCE_URL, notice=new_table_notice(table))
     assert reply.text.startswith(notice + "\n")
     assert table.trump.long_name in notice
 
@@ -228,30 +233,30 @@ def test_new_table_notice_comes_first_on_first_command_in_new_channel():
 # Hints: help and unknown replies carry the shuffle hint when needed
 def test_help_and_unknown_carry_shuffle_hint_when_draw_empty():
     table = make_table([])
-    assert "GM: time to `!shuffle`" in execute(parse("!help", "!"), table, ALICE).hints
-    assert "GM: time to `!shuffle`" in execute(parse("!dance", "!"), table, ALICE).hints
+    assert "GM: time to `!shuffle`" in execute(parse("!help", "!"), table, ALICE, SOURCE_URL).hints
+    assert "GM: time to `!shuffle`" in execute(parse("!dance", "!"), table, ALICE, SOURCE_URL).hints
 
 
 def test_help_carries_no_hint_when_not_needed():
     table = make_table(["5S"])
-    assert execute(parse("!help", "!"), table, BOB).hints == ()
+    assert execute(parse("!help", "!"), table, BOB, SOURCE_URL).hints == ()
 
 
 # AC7.5: help and unknown commands are answered without any table
 def test_standalone_help_and_unknown_need_no_table():
-    help_reply = standalone_reply(parse("!help", "!"), "!", RULESET)
+    help_reply = standalone_reply(parse("!help", "!"), "!", RULESET, SOURCE_URL)
     assert help_reply is not None and "`!flip`" in help_reply.text
-    unknown = standalone_reply(parse("!dance", "!"), "!", RULESET)
+    unknown = standalone_reply(parse("!dance", "!"), "!", RULESET, SOURCE_URL)
     assert unknown is not None and unknown.tone == "error" and "`!help`" in unknown.text
 
 
 def test_standalone_reply_is_none_for_table_commands():
-    assert standalone_reply(parse("!flip", "!"), "!", RULESET) is None
-    assert standalone_reply(parse("!status", "!"), "!", RULESET) is None
+    assert standalone_reply(parse("!flip", "!"), "!", RULESET, SOURCE_URL) is None
+    assert standalone_reply(parse("!status", "!"), "!", RULESET, SOURCE_URL) is None
 
 
 def test_standalone_reply_uses_configured_prefix():
-    assert "`?help`" in standalone_reply(parse("?dance", "?"), "?", RULESET).text
+    assert "`?help`" in standalone_reply(parse("?dance", "?"), "?", RULESET, SOURCE_URL).text
 
 
 # AC1.7 / AC1.8: which commands are allowed to start a deck
@@ -295,7 +300,7 @@ def test_gm_shuffle_on_new_deck_announces_without_a_second_shuffle():
     notice = new_table_notice(table)
     before = (table.deck.draw_codes(), table.deck.discard_codes(), table.trump)
 
-    reply = execute(parse("!shuffle", "!"), table, GM, notice=notice)
+    reply = execute(parse("!shuffle", "!"), table, GM, SOURCE_URL, notice=notice)
 
     assert (table.deck.draw_codes(), table.deck.discard_codes(), table.trump) == before
     assert reply.text == notice
@@ -309,7 +314,7 @@ def test_non_gm_shuffle_with_notice_is_refused_not_reshuffled():
     notice = new_table_notice(t)
     before = (t.deck.draw_codes(), t.deck.discard_codes(), t.trump)
 
-    reply = execute(parse("!shuffle", "!"), t, ALICE, notice=notice)
+    reply = execute(parse("!shuffle", "!"), t, ALICE, SOURCE_URL, notice=notice)
 
     assert reply.tone == "error"
     assert "Only the GM can shuffle" in reply.text

@@ -261,10 +261,11 @@ async def test_run_gives_the_store_and_the_bot_the_same_ruleset(tmp_path: Path, 
     monkeypatch.setattr(entry, "resolve_endpoints", discovery)
     config = Config(token="x.y", instance_url=None, api_url="http://unused.test/api", gateway_url=None,
                     gm_role_name="GM", prefix="!", data_dir=tmp_path, assets_dir=DEFAULT_ASSETS_DIR,
-                    log_level="INFO")
+                    log_level="INFO", source_url="https://fork.example/bot")
 
     with pytest.raises(Stop):
         await entry.run(config, CardImages(DEFAULT_ASSETS_DIR), custom)
 
     assert seen["ruleset"] is custom
     assert seen["store"].ruleset is custom
+    assert seen["source_url"] == "https://fork.example/bot"

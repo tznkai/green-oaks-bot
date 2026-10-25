@@ -22,6 +22,9 @@ ALICE = Actor("1", "Alice", False)
 BOB = Actor("2", "Bob", False)
 GM = Actor("9", "Gemma", True)
 
+# Not the default, so a path that quietly used the default source URL shows up in a test.
+SOURCE_URL = "https://source.example/green-oaks-bot"
+
 
 @cache
 def default_ruleset() -> Ruleset:

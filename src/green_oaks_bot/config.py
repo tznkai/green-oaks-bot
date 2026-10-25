@@ -8,11 +8,13 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from green_oaks_bot.ruleset import DEFAULT_RULES_FILE
 
 DEFAULT_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets" / "cards"
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+DEFAULT_SOURCE_URL = "https://github.com/tznkai/green-oaks-bot"
 
 
 class ConfigError(ValueError):
@@ -22,6 +24,14 @@ class ConfigError(ValueError):
 def _opt(env: Mapping[str, str], name: str) -> str | None:
     value = env.get(name, "").strip()
     return value or None
+
+
+def _source_url(env: Mapping[str, str]) -> str:
+    url = _opt(env, "SOURCE_URL") or DEFAULT_SOURCE_URL
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc or any(c.isspace() for c in url):
+        raise ConfigError("SOURCE_URL must be an http:// or https:// URL")
+    return url
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,7 @@ class Config:
     assets_dir: Path
     log_level: str
     rules_file: Path = DEFAULT_RULES_FILE
+    source_url: str = DEFAULT_SOURCE_URL
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -51,6 +62,7 @@ class Config:
         if log_level not in LOG_LEVELS:
             raise ConfigError(f"LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}")
         prefix = env.get("COMMAND_PREFIX", "")
+        source_url = _source_url(env)
         return cls(
             token=token,
             instance_url=instance_url,
@@ -62,4 +74,5 @@ class Config:
             assets_dir=Path(_opt(env, "CARD_ASSETS_DIR") or DEFAULT_ASSETS_DIR),
             log_level=log_level,
             rules_file=Path(_opt(env, "RULES_FILE") or DEFAULT_RULES_FILE),
+            source_url=source_url,
         )
