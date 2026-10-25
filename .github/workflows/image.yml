@@ -22,7 +22,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
+      # Runtime dependencies are pinned by requirements.txt (the image's pins); dev tools are not.
+      - run: pip install -c requirements.txt -e '.[dev]'
       - run: python -m pytest -q -W error
       - run: ruff check src tests tools
       - run: reuse --root . lint
