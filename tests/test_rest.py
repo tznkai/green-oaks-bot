@@ -227,6 +227,30 @@ async def test_429_without_json_body_falls_back_to_retry_after_header(fake, sess
     assert sleeps == [2.0]
 
 
+@pytest.mark.parametrize(
+    ("body", "content_type", "headers", "expected"),
+    [
+        (b'{"code":"RATE_LIMITED","retry_after":NaN}', "application/json", {}, 1.0),
+        (b'{"code":"RATE_LIMITED","retry_after":Infinity}', "application/json", {}, 1.0),
+        (b'{"code":"RATE_LIMITED","retry_after":1e9}', "application/json", {}, 60.0),
+        (b'{"code":"RATE_LIMITED","retry_after":-3}', "application/json", {}, 0.001),
+        (b"", "text/plain", {"Retry-After": "-5"}, 0.001),
+        (b"", "text/plain", {"Retry-After": "nan"}, 1.0),
+        (b"", "text/plain", {"Retry-After": "inf"}, 1.0),
+        (b"", "text/plain", {"Retry-After": "1e9"}, 60.0),
+        (b"", "text/plain", {}, 1.0),
+    ],
+)
+async def test_429_retry_delay_is_finite_and_clamped(fake, session, body, content_type, headers, expected):
+    state, base = fake
+    state.overrides[f"POST {MESSAGES}"] = Override(429, body, content_type=content_type, headers=headers)
+    sleeps: list[float] = []
+    embed = reply_to_embed(Reply("hi"), has_image=False)
+    with pytest.raises(FluxerHTTPError):
+        await make_rest(session, base, sleeps=sleeps, max_retries=1).send_message("3001", embed, None)
+    assert sleeps == [expected]
+
+
 # Other errors
 
 

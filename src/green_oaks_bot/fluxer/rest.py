@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -21,6 +22,17 @@ log = logging.getLogger(__name__)
 
 ATTACHMENT_NAME = "card.png"
 EMBED_DESCRIPTION_MAX = 4096
+RETRY_AFTER_MIN = 0.001
+RETRY_AFTER_MAX = 60.0
+RETRY_AFTER_DEFAULT = 1.0
+
+
+def _finite_or_none(value: object) -> float | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 class FluxerHTTPError(Exception):
@@ -110,14 +122,17 @@ class FluxerREST:
 
     @staticmethod
     async def _retry_after(resp: aiohttp.ClientResponse) -> float:
+        delay: float | None
         try:
             body = await resp.json(content_type=None)
-            return max(float(body["retry_after"]), 0.001)
+            delay = _finite_or_none(body["retry_after"])
         except (ValueError, KeyError, TypeError, aiohttp.ContentTypeError):
-            try:
-                return float(resp.headers.get("Retry-After", "1"))
-            except ValueError:
-                return 1.0
+            delay = None
+        if delay is None:
+            delay = _finite_or_none(resp.headers.get("Retry-After"))
+        if delay is None:
+            delay = RETRY_AFTER_DEFAULT
+        return min(max(delay, RETRY_AFTER_MIN), RETRY_AFTER_MAX)
 
     async def get_gateway_url(self) -> str:
         return (await self.request("GET", "/gateway/bot"))["url"]
