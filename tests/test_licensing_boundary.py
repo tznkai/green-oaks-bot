@@ -2,10 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """AC13.1: no published text file in the project names a rules expression.
 
-The scanned set is every text file under the project root (rglob, so it also works from an sdist),
-except the rules data file itself and the LICENSES/ directory. Binary files (they do not decode as
-UTF-8) are skipped. The expressions are read from the rules data file (its keywords and its two
-points terms), so this file never spells them out. A term matches case-insensitively, as a whole
+The scanned set is every published text file under the project root: an allowlist of suffixes and
+names, found with rglob so it also works from an sdist. It excludes the rules data file itself and
+the LICENSES/ directory, and skips files that do not decode as UTF-8. A guard test runs `git ls-files`
+when a git index is present and fails on any tracked file that the allowlist neither covers nor
+explicitly excludes, so a new file type cannot slip past the allowlist unnoticed. Secret files
+(`.env` and similar) are never opened. The expressions are read from the rules data file (its
+keywords and its two points terms), so this file never spells them out. A term matches
+case-insensitively, as a whole
 word or as a token between underscores or spaces, with an optional plural `s`, and at camelCase
 boundaries (a term after a lower-case word, or before an upper-case one). Matches are found anywhere
 in a file: code, strings, comments and names. The samples below are built from the rules file's
@@ -14,7 +18,9 @@ terms at run time, so this file never spells them out either.
 
 from __future__ import annotations
 
+import fnmatch
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -27,6 +33,14 @@ PRUNED_DIR_NAMES = {".venv", ".git", "data", "build", "dist", "__pycache__"}  # 
 SCANNED_SUFFIXES = {".py", ".md", ".toml", ".json", ".yml", ".yaml", ".sh", ".txt", ".example"}
 SCANNED_NAMES = {"Dockerfile", ".dockerignore", ".gitignore"}
 EXCLUDED_ROOT_DIRS = {"LICENSES"}
+EXCLUDED_SUFFIXES = {".png"}  # binary card art, licensed in REUSE.toml; never decoded as text
+# Secret files are never opened, whatever the allowlist says: a .env file usually holds a real token,
+# and a later allowlist edit must not make the scan read it. The denylist is checked before the
+# allowlist and before any read. ".env.example" is the committed template and is scanned like any
+# text file. The globs also cover key material, which must never be published either.
+SECRET_NAMES = {".env"}
+SECRET_GLOBS = (".env.*", "*.pem", "*.key", "id_rsa*")
+SECRET_EXEMPT_NAMES = {".env.example"}
 
 # A term starts and ends at a non-letter, or at a lower-to-upper camelCase boundary.
 _WORD_START = r"(?:(?<![A-Za-z])|(?<=[a-z])(?=[A-Z]))"
@@ -48,6 +62,13 @@ def _pruned(rel: Path) -> bool:
     return any(part in PRUNED_DIR_NAMES or part.endswith("_cache") for part in rel.parts[:-1])
 
 
+def is_secret(path: Path) -> bool:
+    name = path.name
+    if name in SECRET_EXEMPT_NAMES:
+        return False
+    return name in SECRET_NAMES or any(fnmatch.fnmatchcase(name, glob) for glob in SECRET_GLOBS)
+
+
 def scanned_files(root: Path = REPO) -> list[Path]:
     """Every published text file under `root`, excluding the rules file and LICENSES/."""
     files = []
@@ -55,6 +76,8 @@ def scanned_files(root: Path = REPO) -> list[Path]:
         rel = path.relative_to(root)
         if not path.is_file() or _pruned(rel):
             continue
+        if is_secret(path):
+            continue  # before the allowlist and before any read
         if rel.parts[0] in EXCLUDED_ROOT_DIRS or path.resolve() == RULES_FILE.resolve():
             continue
         if path.name not in SCANNED_NAMES and path.suffix not in SCANNED_SUFFIXES:
@@ -65,6 +88,33 @@ def scanned_files(root: Path = REPO) -> list[Path]:
             continue
         files.append(path)
     return files
+
+
+def git_tracked_files(root: Path = REPO) -> list[Path] | None:
+    """Files git tracks under `root` (paths relative to `root`), or None without a usable index."""
+    try:
+        listing = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True, timeout=60,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [root / name for name in listing.decode("utf-8", "surrogateescape").split("\0") if name]
+
+
+def unrecognised_files(tracked: list[Path], root: Path = REPO) -> list[Path]:
+    """Tracked files that the scan neither covers nor explicitly excludes."""
+    scanned = set(scanned_files(root))
+    rules = RULES_FILE.resolve()
+    unrecognised = []
+    for path in tracked:
+        if path in scanned or not path.is_file() or is_secret(path):
+            continue
+        if path.resolve() == rules or path.relative_to(root).parts[0] in EXCLUDED_ROOT_DIRS:
+            continue
+        if path.suffix in EXCLUDED_SUFFIXES:
+            continue
+        unrecognised.append(path)
+    return unrecognised
 
 
 def _either_case(char: str) -> str:
@@ -151,6 +201,71 @@ def test_scan_skips_files_that_do_not_decode_as_utf8_and_pruned_dirs(tmp_path):
     (tmp_path / "build").mkdir()
     (tmp_path / "build" / "inside.md").write_text("x", "utf-8")
     assert {p.name for p in scanned_files(tmp_path)} == {"good.md"}
+
+
+SECRET_FILES = [".env", ".env.local", ".env.production"]
+
+
+def test_secret_files_are_never_opened_or_scanned(tmp_path, monkeypatch):
+    # Each secret holds a rules term, so a read that reached the scan would also be an offence.
+    leaked = f"TOKEN = '{rules_terms()[0]}'\n"
+    for name in SECRET_FILES:
+        (tmp_path / name).write_text(leaked, "utf-8")
+    (tmp_path / ".env.example").write_text("FLUXER_TOKEN=\n", "utf-8")
+
+    opened: list[str] = []
+
+    def recording(real):
+        def wrapper(self, *args, **kwargs):
+            opened.append(self.name)
+            return real(self, *args, **kwargs)
+        return wrapper
+
+    for method in ("open", "read_text", "read_bytes"):
+        monkeypatch.setattr(Path, method, recording(getattr(Path, method)))
+
+    scanned = scanned_files(tmp_path)
+    assert tmp_path / ".env.example" in scanned
+    for name in SECRET_FILES:
+        assert tmp_path / name not in scanned, name
+    secret_opens = sorted(set(opened) & set(SECRET_FILES))
+    assert not secret_opens, f"secret files were opened: {secret_opens}"
+
+
+@pytest.mark.parametrize("name", [".env", ".env.local", ".env.production", "server.pem", "deploy.key",
+                                  "id_rsa", "id_rsa.pub"])
+def test_secret_names_are_denied(name):
+    assert is_secret(Path(name))
+
+
+@pytest.mark.parametrize("name", [".env.example", "README.md", "config.toml"])
+def test_templates_and_ordinary_files_are_not_secret(name):
+    assert not is_secret(Path(name))
+
+
+def test_guard_flags_tracked_files_of_unrecognised_types(tmp_path):
+    (tmp_path / "notes.md").write_text("plain", "utf-8")
+    (tmp_path / "card.png").write_bytes(b"\x89PNG\r\n")
+    (tmp_path / "logo.bin").write_bytes(b"\x00\x01\x02")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "x.md").write_text("pruned, so never scanned", "utf-8")
+    tracked = [tmp_path / name for name in ["notes.md", "card.png", "logo.bin", "data/x.md"]]
+    assert {p.name for p in unrecognised_files(tracked, tmp_path)} == {"logo.bin", "x.md"}
+
+
+def test_every_tracked_file_is_scanned_or_explicitly_excluded():
+    tracked = git_tracked_files()
+    if not tracked:
+        pytest.skip("no git index under the project root (an sdist or export); the guard runs in a checkout")
+    unrecognised = unrecognised_files(tracked)
+    assert not unrecognised, (
+        "tracked files the licensing scan neither covers nor excludes. Add the suffix or name to "
+        "SCANNED_SUFFIXES / SCANNED_NAMES in tests/test_licensing_boundary.py, or to EXCLUDED_SUFFIXES / "
+        "EXCLUDED_ROOT_DIRS there if it is binary or licensed elsewhere:\n"
+        + "\n".join(str(p.relative_to(REPO)) for p in unrecognised)
+    )
+    secrets = [str(p.relative_to(REPO)) for p in tracked if is_secret(p)]
+    assert not secrets, f"secret files must not be tracked by git: {secrets}"
 
 
 def test_no_rules_expression_in_any_published_text():
