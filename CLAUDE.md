@@ -3,7 +3,7 @@
 
 # Green Oaks Bot
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 Fluxer chat bot that resolves card checks with one shared 40-card deck per channel.
 User-facing docs (commands, config, deploy) are in `README.md`; Fluxer API notes in `docs/fluxer-notes.md`.
@@ -14,7 +14,8 @@ User-facing docs (commands, config, deploy) are in `README.md`; Fluxer API notes
 - Lint: `.venv/bin/ruff check src tests tools`
 - Licensing: `.venv/bin/reuse --root . lint`
 - CI (`.github/workflows/image.yml`) runs these three on every push/PR; the image is built every run
-  but pushed to GHCR only on `v*` tags.
+  but pushed to GHCR only on `v*` tags. CI installs with `-c requirements.txt` (the image's pinned
+  runtime deps, compiled by uv from `pyproject.toml`); regenerate it when runtime deps change.
 
 ## Licensing boundary (read before editing any text)
 
@@ -25,6 +26,9 @@ User-facing docs (commands, config, deploy) are in `README.md`; Fluxer API notes
   refer to the rules file instead. `tests/test_licensing_boundary.py` scans every published text file in
   the project (README, this file, docs, build files, `src/`, `tests/`, `tools/`; excludes the TOML and `LICENSES/`)
   for the TOML's terms and fails on any match (it builds samples from the TOML at run time).
+  It never opens secret files (`.env`, `.env.*` except `.env.example`, keys). With a git index, a
+  guard test fails on any tracked file type the scan neither covers nor explicitly excludes: a new
+  file type means extending its allowlist or exclusions.
 - Every new file needs an SPDX header or a `REUSE.toml` entry, or `reuse lint` fails.
 
 ## Architecture
@@ -43,7 +47,8 @@ Imperative shell:
 - `render.py` - card images (Pillow)
 - `fluxer/` - `rest.py` (HTTP, endpoint discovery), `gateway.py` (websocket), `roles.py` (GM lookup)
 - `bot.py` - wires a message to parse -> store.transact -> execute -> reply
-- `config.py` - env vars to `Config` (the only place defaults like `SOURCE_URL` live)
+- `config.py` - env vars to `Config` (the only place defaults like `SOURCE_URL` live); `token` is
+  `repr=False` so a logged `Config` never shows it; `COMMAND_PREFIX` is stripped, blank means `!`
 - `__main__.py` - loads config and ruleset (fails fast with a clear message), runs the bot
 
 ## Contracts
