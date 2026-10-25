@@ -92,6 +92,10 @@ Run this manually after any deploy.
 - Restart the server; `!status` shows the same counts as before the restart.
 - A DM to the bot gets "server channels only" once.
 
+## How this was developed
+
+This project was coded using Claude Code, orchestrated by Opus 5.5 with Haiku 5.5 subagents writing much of the code, under instructions from K. Chen and incorporating his previous work; his credit is attenuated appropriately. As with all free and open source projects, the user's ultimate protections lie in the ability to examine the code and the right to fork it.
+
 ## Licensing
 
 This project is split into two licensed parts, so that the engine can be reused without the game's rules text.
