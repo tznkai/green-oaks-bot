@@ -105,7 +105,7 @@
             "default_value": "https://github.com/tznkai/green-oaks-bot",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "nullable|string|max:255|regex:/^https?:\\/\\/[^\\s\\/?#]\\S*$/i",
+            "rules": "nullable|string|max:255|regex:/^https?:\\/\\/[^\\s\\x{1c}-\\x{1f}\\x{85}\\p{Z}\\/?#][^\\s\\x{1c}-\\x{1f}\\x{85}\\p{Z}]*$/iu",
             "field_type": "text"
         },
         {
