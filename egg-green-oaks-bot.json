@@ -90,12 +90,12 @@
         },
         {
             "name": "Log level",
-            "description": "DEBUG, INFO, WARNING or ERROR.",
+            "description": "DEBUG, INFO, WARNING, ERROR or CRITICAL.",
             "env_variable": "LOG_LEVEL",
             "default_value": "INFO",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "required|string|in:DEBUG,INFO,WARNING,ERROR",
+            "rules": "required|string|in:DEBUG,INFO,WARNING,ERROR,CRITICAL",
             "field_type": "text"
         },
         {
@@ -105,7 +105,7 @@
             "default_value": "https://github.com/tznkai/green-oaks-bot",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "nullable|string|max:255",
+            "rules": "nullable|string|max:255|regex:/^https?:\\/\\/\\S+$/",
             "field_type": "text"
         },
         {
