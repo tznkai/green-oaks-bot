@@ -48,6 +48,8 @@ Set these as environment variables (in the `.env` file for Docker Compose, or as
 
 Set `RULES_FILE` only to load a different rules file. It must have the same structure. A missing or malformed file stops startup with a clear message.
 
+Any message starting with the prefix that isn't a known command gets an "Unknown command" reply, so on a server that already runs a bot using the same prefix, set a distinct `COMMAND_PREFIX`.
+
 ## Pterodactyl
 
 - Admin → Nests → Import Egg → `egg-green-oaks-bot.json`.
